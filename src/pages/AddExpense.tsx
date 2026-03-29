@@ -155,21 +155,20 @@ export default function AddExpenseForm() {
           .from('expenses')
           .update(expensePayload)
           .eq('id', id)
-          .select()
-          .single();
+          .select();
           
         if (expenseError) throw expenseError;
-        if (!updatedExpense) throw new Error("Update failed. You might not have permission to edit this transaction.");
+        if (!updatedExpense || updatedExpense.length === 0) throw new Error("Update failed. You might not have permission to edit this transaction.");
       } else {
         // 2. Insert core Expense with payer_id
         const { data: expenseData, error: expenseError } = await supabase
           .from('expenses')
           .insert([expensePayload])
-          .select()
-          .single();
+          .select();
 
         if (expenseError) throw expenseError;
-        expenseId = expenseData.id;
+        if (!expenseData || expenseData.length === 0) throw new Error("Insert failed. You might not have permission to add this transaction.");
+        expenseId = expenseData[0].id;
       }
 
       // 3. Handle Splits
