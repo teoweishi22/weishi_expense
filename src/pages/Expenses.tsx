@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Expense, Category, Person } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download } from 'lucide-react';
+import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
 export default function Expenses() {
@@ -14,6 +15,7 @@ export default function Expenses() {
   
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [me, setMe] = useState<Person | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export default function Expenses() {
     setLoading(true);
     try {
       const [expRes, catRes, peopleRes] = await Promise.all([
-        supabase.from('expenses').select('*, category:categories(*), expense_splits(*)').order('expense_date', { ascending: false }),
+        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*)').order('expense_date', { ascending: false }),
         supabase.from('categories').select('*').order('name'),
         supabase.from('people').select('*')
       ]);
@@ -41,6 +43,7 @@ export default function Expenses() {
       if (expRes.data) setExpenses(expRes.data);
       if (catRes.data) setCategories(catRes.data);
       if (peopleRes.data) {
+        setPeople(peopleRes.data);
         const mePerson = peopleRes.data.find(p => p.name.toLowerCase() === 'me');
         setMe(mePerson || null);
       }
@@ -90,6 +93,39 @@ export default function Expenses() {
   };
 
   const totalSpent = filteredExpenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
+
+  const handleExport = () => {
+    // Sort chronologically (oldest first) for the Excel export
+    const sortedExpenses = [...expenses].sort((a, b) => 
+      new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime()
+    );
+
+    const dataToExport = sortedExpenses.map(exp => {
+      const payer = people.find(p => p.id === exp.payer_id);
+      
+      // Create a summary of splits
+      const splitSummary = (exp.expense_splits || []).map(split => {
+        const person = people.find(p => p.id === split.person_id);
+        return `${person?.name || 'Unknown'}: RM ${Number(split.amount_owed).toFixed(2)}${split.is_settled ? ' (Settled)' : ' (Pending)'}`;
+      }).join('; ');
+
+      return {
+        'Date': format(new Date(exp.expense_date), 'yyyy-MM-dd'),
+        'Description': exp.description,
+        'Category': exp.category?.name || 'Uncategorized',
+        'Payment Method': exp.payment_method?.name || 'Unknown',
+        'Total Amount (RM)': Number(exp.total_amount).toFixed(2),
+        'Payer': payer?.name || 'Unknown',
+        'Splits': splitSummary,
+        'Created At': format(new Date(exp.created_at), 'yyyy-MM-dd HH:mm:ss'),
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Expenses');
+    XLSX.writeFile(workbook, `Expenses_History_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`);
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -143,15 +179,24 @@ export default function Expenses() {
               </h1>
             </div>
           </div>
-          {filterParam && (
+          <div className="flex flex-col items-end gap-2">
+            {filterParam && (
+              <button 
+                onClick={() => setSearchParams({})}
+                className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors"
+              >
+                <FilterX className="w-3 h-3" />
+                Clear Filter
+              </button>
+            )}
             <button 
-              onClick={() => setSearchParams({})}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors"
+              onClick={handleExport}
+              className="flex items-center gap-1 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-600 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors"
             >
-              <FilterX className="w-3 h-3" />
-              Clear Filter
+              <FileSpreadsheet className="w-3 h-3" />
+              Export to Excel
             </button>
-          )}
+          </div>
         </div>
       </section>
 

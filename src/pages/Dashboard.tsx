@@ -4,7 +4,7 @@ import { Expense, ExpenseSplit, Person } from '@/types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { format } from 'date-fns';
 import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag, X, Download } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 
 import { useNavigate } from 'react-router-dom';
 

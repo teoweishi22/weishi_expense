@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Person, ExpenseSplit } from '@/types';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { 
   ArrowLeft, 
