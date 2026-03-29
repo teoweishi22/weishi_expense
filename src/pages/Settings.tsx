@@ -36,8 +36,12 @@ export default function Settings() {
         // Case-insensitive search for 'Me'
         const me = peopleRes.data.find(p => p.name.toLowerCase() === 'me');
         if (me) {
-          // If the limit exists in DB (even if 0), set it
-          setMonthlyLimit(me.monthly_limit?.toString() || '1000');
+          // Check if the property exists in the DB, even if it is 0
+          setMonthlyLimit(
+            me.monthly_limit !== undefined && me.monthly_limit !== null 
+              ? me.monthly_limit.toString() 
+              : '1000'
+          );
         }
       }
     } catch (error) {

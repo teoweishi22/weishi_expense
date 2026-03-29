@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Category, PaymentMethod, Person } from '@/types';
 import { 
@@ -14,6 +14,7 @@ import {
   Tag,
   User as UserIcon
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 type FormData = {
   description: string;
@@ -21,18 +22,22 @@ type FormData = {
   date: string;
   category_id: string;
   payment_method_id: string;
-  payer_id: string; // Critical: Tracks who actually paid
+  payer_id: string;
   receipt_photo: FileList;
   splits: { person_id: string; amount_owed: string | number }[];
 };
 
 export default function AddExpenseForm() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditing = !!id;
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [isSplitting, setIsSplitting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
 
   const { register, control, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<FormData>({
     defaultValues: {
@@ -60,14 +65,44 @@ export default function AddExpenseForm() {
       setPaymentMethods(payRes.data || []);
       setPeople(peopleList);
 
-      // Default Payer to "Me" if found
-      const me = peopleList.find(p => p.name.toLowerCase() === 'me');
-      if (me) {
-        setValue('payer_id', me.id);
+      if (isEditing) {
+        const { data: expense, error } = await supabase
+          .from('expenses')
+          .select('*, expense_splits(*)')
+          .eq('id', id)
+          .single();
+          
+        if (expense) {
+          setExistingPhotoUrl(expense.receipt_photo_url);
+          
+          const hasSplits = expense.expense_splits && expense.expense_splits.length > 0;
+          if (hasSplits) {
+            setIsSplitting(true);
+          }
+
+          reset({
+            description: expense.description,
+            amount: expense.total_amount,
+            date: expense.expense_date,
+            category_id: expense.category_id,
+            payment_method_id: expense.payment_method_id,
+            payer_id: expense.payer_id,
+            splits: hasSplits ? expense.expense_splits.map((s: any) => ({
+              person_id: s.person_id,
+              amount_owed: s.amount_owed
+            })) : []
+          });
+        }
+      } else {
+        // Default Payer to "Me" if found
+        const me = peopleList.find(p => p.name.toLowerCase() === 'me');
+        if (me) {
+          setValue('payer_id', me.id);
+        }
       }
     }
     fetchData();
-  }, [setValue]);
+  }, [id, isEditing, setValue]);
 
   const totalAmount = watch("amount");
 
@@ -83,7 +118,7 @@ export default function AddExpenseForm() {
     setIsSubmitting(true);
     try {
       // 1. Upload photo if exists
-      let photoUrl = null;
+      let photoUrl = existingPhotoUrl;
       if (data.receipt_photo && data.receipt_photo.length > 0) {
         const file = data.receipt_photo[0];
         const fileExt = file.name.split('.').pop();
@@ -103,41 +138,80 @@ export default function AddExpenseForm() {
         }
       }
 
-      // 2. Insert core Expense with payer_id
-      const { data: expenseData, error: expenseError } = await supabase
-        .from('expenses')
-        .insert([{
-          description: data.description,
-          total_amount: data.amount,
-          expense_date: data.date,
-          category_id: data.category_id,
-          payment_method_id: data.payment_method_id,
-          payer_id: data.payer_id, // This links the payer to the expense
-          receipt_photo_url: photoUrl
-        }])
-        .select()
-        .single();
+      const expensePayload = {
+        description: data.description,
+        total_amount: data.amount,
+        expense_date: data.date,
+        category_id: data.category_id,
+        payment_method_id: data.payment_method_id,
+        payer_id: data.payer_id,
+        ...(photoUrl ? { receipt_photo_url: photoUrl } : {})
+      };
 
-      if (expenseError) throw expenseError;
+      let expenseId = id;
 
-      // 3. Insert Splits if applicable
-      if (isSplitting && data.splits.length > 0) {
-        const splitInserts = data.splits.map(split => ({
-          expense_id: expenseData.id,
-          person_id: split.person_id,
-          amount_owed: Number(split.amount_owed),
-          is_settled: false
-        }));
-        await supabase.from('expense_splits').insert(splitInserts);
+      if (isEditing) {
+        const { data: updatedExpense, error: expenseError } = await supabase
+          .from('expenses')
+          .update(expensePayload)
+          .eq('id', id)
+          .select()
+          .single();
+          
+        if (expenseError) throw expenseError;
+        if (!updatedExpense) throw new Error("Update failed. You might not have permission to edit this transaction.");
+      } else {
+        // 2. Insert core Expense with payer_id
+        const { data: expenseData, error: expenseError } = await supabase
+          .from('expenses')
+          .insert([expensePayload])
+          .select()
+          .single();
+
+        if (expenseError) throw expenseError;
+        expenseId = expenseData.id;
       }
 
-      alert("Expense added successfully!");
+      // 3. Handle Splits
+      if (isEditing) {
+        // Fetch existing splits to preserve is_settled status
+        const { data: existingSplits } = await supabase
+          .from('expense_splits')
+          .select('person_id, is_settled')
+          .eq('expense_id', expenseId);
+          
+        await supabase.from('expense_splits').delete().eq('expense_id', expenseId);
+        
+        if (isSplitting && data.splits.length > 0) {
+          const splitInserts = data.splits.map(split => {
+            const existing = existingSplits?.find(s => s.person_id === split.person_id);
+            return {
+              expense_id: expenseId,
+              person_id: split.person_id,
+              amount_owed: Number(split.amount_owed),
+              is_settled: existing ? existing.is_settled : false
+            };
+          });
+          await supabase.from('expense_splits').insert(splitInserts);
+        }
+      } else {
+        if (isSplitting && data.splits.length > 0) {
+          const splitInserts = data.splits.map(split => ({
+            expense_id: expenseId,
+            person_id: split.person_id,
+            amount_owed: Number(split.amount_owed),
+            is_settled: false
+          }));
+          await supabase.from('expense_splits').insert(splitInserts);
+        }
+      }
+
       reset();
       setIsSplitting(false);
-      navigate('/');
+      navigate(-1);
     } catch (error: any) {
-      console.error("Error adding expense:", error);
-      alert(`Failed to add expense: ${error.message}`);
+      console.error("Error saving expense:", error);
+      alert(`Failed to save expense: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -149,10 +223,10 @@ export default function AddExpenseForm() {
       <div className="fixed -top-24 -right-24 w-96 h-96 bg-tertiary-fixed/10 rounded-full blur-[100px] -z-10" />
       
       <header className="fixed top-0 w-full flex justify-between items-center px-6 py-4 bg-white/80 backdrop-blur-xl z-50 border-b border-black/5">
-        <button onClick={() => navigate('/')} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+        <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
           <X className="w-6 h-6" />
         </button>
-        <h1 className="font-headline font-extrabold tracking-tight text-xl">New Transaction</h1>
+        <h1 className="font-headline font-extrabold tracking-tight text-xl">{isEditing ? "Edit Transaction" : "New Transaction"}</h1>
         <div className="w-10" />
       </header>
 
@@ -240,7 +314,11 @@ export default function AddExpenseForm() {
               <div>
                 <h4 className="font-bold text-sm">Add Receipt</h4>
                 <p className="text-[10px] text-gray-400">
-                  {watch('receipt_photo')?.[0] ? watch('receipt_photo')[0].name : 'Capture photo or upload'}
+                  {watch('receipt_photo')?.[0] 
+                    ? watch('receipt_photo')[0].name 
+                    : existingPhotoUrl 
+                      ? 'Photo attached (click to change)' 
+                      : 'Capture photo or upload'}
                 </p>
               </div>
             </div>
@@ -317,7 +395,7 @@ export default function AddExpenseForm() {
               disabled={isSubmitting}
               className="w-full bg-black text-white font-headline font-bold py-5 rounded-full shadow-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:bg-gray-400"
             >
-              {isSubmitting ? "Processing..." : <><CheckCircle className="w-5 h-5" /> Add Transaction</>}
+              {isSubmitting ? "Processing..." : <><CheckCircle className="w-5 h-5" /> {isEditing ? "Save Changes" : "Add Transaction"}</>}
             </button>
           </div>
         </div>
