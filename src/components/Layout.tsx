@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Home, PlusCircle, Users, Settings } from 'lucide-react';
+import { Home, PlusCircle, Users, Settings, ReceiptText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function Layout() {
@@ -7,6 +7,7 @@ export default function Layout() {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: Home },
+    { name: 'History', path: '/expenses', icon: ReceiptText },
     { name: 'Add Expense', path: '/add', icon: PlusCircle },
     { name: 'Settlements', path: '/settlements', icon: Users },
     { name: 'Settings', path: '/settings', icon: Settings },

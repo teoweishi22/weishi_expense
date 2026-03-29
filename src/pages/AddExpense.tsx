@@ -2,8 +2,17 @@ import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { UploadCloud } from 'lucide-react';
 import { Category, PaymentMethod, Person } from '@/types';
+import { 
+  X, 
+  Calendar, 
+  FileText, 
+  Receipt, 
+  Plus, 
+  CheckCircle,
+  CreditCard,
+  Tag
+} from 'lucide-react';
 
 type FormData = {
   description: string;
@@ -122,111 +131,207 @@ export default function AddExpenseForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg p-6 mx-auto space-y-6 bg-white rounded-xl shadow-sm border border-gray-100">
-      <h2 className="text-xl font-bold text-gray-800">Add New Expense</h2>
+    <div className="text-on-surface min-h-screen relative overflow-hidden">
+      {/* Background Decoration for Depth */}
+      <div className="fixed -top-24 -right-24 w-96 h-96 bg-tertiary-fixed/10 rounded-full blur-[100px] -z-10"></div>
+      <div className="fixed -bottom-24 -left-24 w-96 h-96 bg-primary-fixed/20 rounded-full blur-[100px] -z-10"></div>
 
-      {/* Basic Details */}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <input {...register("description", { required: true })} className="w-full mt-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="e.g., Grocery at Jaya Grocer" />
-        </div>
+      {/* Top Navigation */}
+      <header className="fixed top-0 w-full flex justify-between items-center px-6 py-4 bg-slate-50/80 backdrop-blur-xl z-50">
+        <button 
+          onClick={() => navigate('/')}
+          className="flex items-center justify-center w-10 h-10 rounded-full bg-surface-container-low active:scale-95 transition-transform"
+        >
+          <X className="text-primary w-6 h-6" />
+        </button>
+        <h1 className="font-headline font-extrabold tracking-tight text-xl text-primary">New Transaction</h1>
+        <div className="w-10"></div> {/* Spacer for symmetry */}
+      </header>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Amount (RM)</label>
-            <input type="number" step="0.01" {...register("amount", { required: true })} className="w-full mt-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Date</label>
-            <input type="date" {...register("date", { required: true })} className="w-full mt-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-          </div>
-        </div>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <main className="pt-24 pb-48 px-6 max-w-xl mx-auto space-y-12">
+          
+          {/* Large Amount Input Section */}
+          <section className="flex flex-col items-center justify-center text-center space-y-2">
+            <span className="font-label text-sm font-semibold uppercase tracking-widest text-secondary">Amount</span>
+            <div className="flex items-baseline justify-center w-full">
+              <span className="font-headline font-extrabold text-4xl text-primary mr-2 opacity-40">RM</span>
+              <input 
+                type="number" 
+                step="0.01"
+                {...register("amount", { required: true })} 
+                className="w-full max-w-[240px] bg-transparent border-none text-center font-headline font-extrabold text-7xl tracking-tighter text-primary focus:ring-0 p-0 placeholder:text-primary/20" 
+                placeholder="0.00" 
+              />
+            </div>
+          </section>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Category</label>
-            <select {...register("category_id", { required: true })} className="w-full mt-1 p-2 border rounded-lg bg-white">
-              <option value="">Select...</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Payment Method</label>
-            <select {...register("payment_method_id", { required: true })} className="w-full mt-1 p-2 border rounded-lg bg-white">
-              <option value="">Select...</option>
-              {paymentMethods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-        </div>
+          {/* Form Fields */}
+          <section className="space-y-4">
+            {/* Category Input */}
+            <div className="group">
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Category</label>
+              <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
+                <Tag className="text-secondary mr-3 w-6 h-6" />
+                <select 
+                  {...register("category_id", { required: true })} 
+                  className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0 appearance-none"
+                >
+                  <option value="">Select Category</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Photo</label>
-          <label className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-            <UploadCloud className="w-6 h-6 text-gray-400 mr-2" />
-            <span className="text-sm text-gray-500">Click to upload proof</span>
+            {/* Date Input */}
+            <div className="group">
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Transaction Date</label>
+              <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
+                <Calendar className="text-secondary mr-3 w-6 h-6" />
+                <input 
+                  type="date" 
+                  {...register("date", { required: true })} 
+                  className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0" 
+                />
+              </div>
+            </div>
+
+            {/* Note Input */}
+            <div className="group">
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Note / Description</label>
+              <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
+                <FileText className="text-secondary mr-3 w-6 h-6" />
+                <input 
+                  type="text"
+                  {...register("description", { required: true })} 
+                  className="bg-transparent border-none p-0 w-full font-body text-base text-primary placeholder:text-secondary/50 focus:ring-0" 
+                  placeholder="Lunch at The Monolith" 
+                />
+              </div>
+            </div>
+
+            {/* Payment Method Input */}
+            <div className="group">
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Payment Method</label>
+              <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
+                <CreditCard className="text-secondary mr-3 w-6 h-6" />
+                <select 
+                  {...register("payment_method_id", { required: true })} 
+                  className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0 appearance-none"
+                >
+                  <option value="">Select Payment Method</option>
+                  {paymentMethods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Attachment Bento Element */}
+          <label className="bg-surface-container-lowest rounded-xl p-6 flex items-center justify-between shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 rounded-lg bg-surface-container-low flex items-center justify-center">
+                <Receipt className="text-secondary w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-headline font-semibold text-sm">Add Receipt</h4>
+                <p className="font-body text-xs text-secondary">
+                  {watch('receipt_photo')?.[0] ? watch('receipt_photo')[0].name : 'Scan or upload a photo'}
+                </p>
+              </div>
+            </div>
+            <div className="bg-surface-container-high w-8 h-8 rounded-full flex items-center justify-center">
+              <Plus className="text-primary w-4 h-4" />
+            </div>
             <input type="file" accept="image/*" {...register("receipt_photo")} className="hidden" />
           </label>
-        </div>
-      </div>
 
-      {/* Split Bill Section */}
-      <div className="pt-4 border-t border-gray-100">
-        <label className="flex items-center space-x-3 cursor-pointer">
-          <input type="checkbox" checked={isSplitting} onChange={(e) => setIsSplitting(e.target.checked)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" />
-          <span className="font-medium text-gray-700">Split this bill?</span>
-        </label>
+          {/* Split Bill Section */}
+          <section className="space-y-4">
+            <label className="flex items-center space-x-3 cursor-pointer bg-surface-container-lowest p-4 rounded-xl shadow-sm">
+              <input 
+                type="checkbox" 
+                checked={isSplitting} 
+                onChange={(e) => setIsSplitting(e.target.checked)} 
+                className="w-5 h-5 text-primary rounded focus:ring-primary border-outline-variant" 
+              />
+              <span className="font-headline font-semibold text-primary">Split this bill?</span>
+            </label>
 
-        {isSplitting && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-600">Who is involved?</span>
-              <button type="button" onClick={splitEqually} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full hover:bg-blue-200">
-                Split Equally
-              </button>
-            </div>
-            
-            {people.map((person) => {
-              const fieldIndex = fields.findIndex(f => f.person_id === person.id);
-              const isIncluded = fieldIndex !== -1;
-
-              return (
-                <div key={person.id} className="flex items-center justify-between">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isIncluded}
-                      onChange={(e) => {
-                        if (e.target.checked) append({ person_id: person.id, amount_owed: '' });
-                        else remove(fieldIndex);
-                      }}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{person.name}</span>
-                  </label>
-                  
-                  {isIncluded && (
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-500">RM</span>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        {...register(`splits.${fieldIndex}.amount_owed` as const, { required: true })}
-                        className="w-24 p-1 text-sm border rounded"
-                        placeholder="0.00"
-                      />
-                    </div>
-                  )}
+            {isSplitting && (
+              <div className="p-5 bg-surface-container-low rounded-xl space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-label text-sm font-bold uppercase tracking-widest text-secondary">Who is involved?</span>
+                  <button 
+                    type="button" 
+                    onClick={splitEqually} 
+                    className="text-xs bg-primary text-on-primary font-bold px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+                  >
+                    Split Equally
+                  </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                
+                <div className="space-y-3">
+                  {people.map((person) => {
+                    const fieldIndex = fields.findIndex(f => f.person_id === person.id);
+                    const isIncluded = fieldIndex !== -1;
 
-      <button type="submit" disabled={isSubmitting} className="w-full py-3 px-4 bg-gray-900 hover:bg-black text-white rounded-lg font-medium transition-colors disabled:bg-gray-400">
-        {isSubmitting ? "Saving..." : "Save Expense"}
-      </button>
-    </form>
+                    return (
+                      <div key={person.id} className="flex items-center justify-between bg-surface-container-lowest p-3 rounded-lg shadow-sm">
+                        <label className="flex items-center space-x-3 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={isIncluded}
+                            onChange={(e) => {
+                              if (e.target.checked) append({ person_id: person.id, amount_owed: '' });
+                              else remove(fieldIndex);
+                            }}
+                            className="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant"
+                          />
+                          <span className="font-body font-medium text-primary">{person.name}</span>
+                        </label>
+                        
+                        {isIncluded && (
+                          <div className="flex items-center space-x-2">
+                            <span className="font-headline font-bold text-secondary opacity-50">RM</span>
+                            <input 
+                              type="number" 
+                              step="0.01"
+                              {...register(`splits.${fieldIndex}.amount_owed` as const, { required: true })}
+                              className="w-24 p-2 text-right font-headline font-bold text-primary bg-surface-container-low border-none rounded-lg focus:ring-1 focus:ring-primary"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
+        </main>
+
+        {/* Fixed Action Button */}
+        <div className="fixed bottom-20 left-0 right-0 p-6 z-50 pointer-events-none">
+          <div className="max-w-xl mx-auto pointer-events-auto">
+            <button 
+              type="submit" 
+              disabled={isSubmitting}
+              className="w-full bg-primary text-on-primary font-headline font-bold py-5 rounded-full shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-70"
+            >
+              {isSubmitting ? (
+                <span>Saving...</span>
+              ) : (
+                <>
+                  <CheckCircle className="w-6 h-6" />
+                  <span>Add Transaction</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
   );
 }
