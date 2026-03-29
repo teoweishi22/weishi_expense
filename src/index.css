@@ -60,3 +60,12 @@
     min-height: max(884px, 100dvh);
   }
 }
+
+.mesh-gradient {
+  background-color: #000000;
+  background-image: 
+    radial-gradient(at 0% 0%, #1b1b1b 0px, transparent 50%),
+    radial-gradient(at 100% 0%, #333333 0px, transparent 50%),
+    radial-gradient(at 100% 100%, #111111 0px, transparent 50%),
+    radial-gradient(at 0% 100%, #000000 0px, transparent 50%);
+}

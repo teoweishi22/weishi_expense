@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Expense, ExpenseSplit } from '@/types';
+import { Expense, ExpenseSplit, Person } from '@/types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { format } from 'date-fns';
 import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag } from 'lucide-react';
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,27 +25,30 @@ export default function Dashboard() {
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
 
-      const { data: expensesData, error: expensesError } = await supabase
-        .from('expenses')
-        .select(`
-          *,
-          category:categories(*),
-          payment_method:payment_methods(*)
-        `)
-        .gte('expense_date', startOfMonth.toISOString().split('T')[0])
-        .order('expense_date', { ascending: false });
+      const [expensesRes, splitsRes, peopleRes] = await Promise.all([
+        supabase
+          .from('expenses')
+          .select(`
+            *,
+            category:categories(*),
+            payment_method:payment_methods(*)
+          `)
+          .gte('expense_date', startOfMonth.toISOString().split('T')[0])
+          .order('expense_date', { ascending: false }),
+        supabase
+          .from('expense_splits')
+          .select('*, person:people(*), expense:expenses(*)')
+          .eq('is_settled', false),
+        supabase.from('people').select('*')
+      ]);
 
-      if (expensesError) throw expensesError;
+      if (expensesRes.error) throw expensesRes.error;
+      if (splitsRes.error) throw splitsRes.error;
+      if (peopleRes.error) throw peopleRes.error;
 
-      const { data: splitsData, error: splitsError } = await supabase
-        .from('expense_splits')
-        .select('*, person:people(*)')
-        .eq('is_settled', false);
-
-      if (splitsError) throw splitsError;
-
-      setExpenses(expensesData || []);
-      setSplits(splitsData || []);
+      setExpenses(expensesRes.data || []);
+      setSplits(splitsRes.data || []);
+      setPeople(peopleRes.data || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -53,14 +57,26 @@ export default function Dashboard() {
   };
 
   const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
-  const totalClaimPending = splits.reduce((sum, split) => {
-    const amount = Number(split.amount_owed);
-    return amount > 0 ? sum + amount : sum;
-  }, 0);
   
+  // 1. Find the "Me" person (assuming your name is "Me" or you have a specific ID)
+  const me = people.find(p => p.name === "Me"); 
+
+  // 2. Calculate "Total I Owe"
+  // This sums up all splits where YOU are the person owing, and someone ELSE was the payer.
   const totalIOwe = splits.reduce((sum, split) => {
-    const amount = Number(split.amount_owed);
-    return amount < 0 ? sum + Math.abs(amount) : sum;
+    if (split.person_id === me?.id && split.expense?.payer_id !== me?.id) {
+      return sum + Number(split.amount_owed);
+    }
+    return sum;
+  }, 0);
+
+  // 3. Update "Claim Pending"
+  // This sums up all splits where SOMEONE ELSE is the person owing, and YOU were the payer.
+  const totalClaimPending = splits.reduce((sum, split) => {
+    if (split.person_id !== me?.id && split.expense?.payer_id === me?.id) {
+      return sum + Number(split.amount_owed);
+    }
+    return sum;
   }, 0);
 
   const expensesByCategory = expenses.reduce((acc, exp) => {

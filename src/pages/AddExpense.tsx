@@ -20,7 +20,7 @@ type FormData = {
   date: string;
   category_id: string;
   payment_method_id: string;
-  paid_by_id: string;
+  payer_id: string;
   receipt_photo: FileList;
   splits: { person_id: string; amount_owed: string | number }[];
 };
@@ -38,7 +38,7 @@ export default function AddExpenseForm() {
   const { register, control, handleSubmit, watch, setValue, reset } = useForm<FormData>({
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
-      paid_by_id: 'me',
+      payer_id: '',
       splits: []
     }
   });
@@ -75,7 +75,7 @@ export default function AddExpenseForm() {
             date: expenseData.expense_date,
             category_id: expenseData.category_id,
             payment_method_id: expenseData.payment_method_id,
-            paid_by_id: expenseData.paid_by_id || 'me',
+            payer_id: expenseData.payer_id || '',
             splits: expenseData.expense_splits
               ?.filter((split: any) => split.amount_owed > 0)
               .map((split: any) => ({
@@ -138,7 +138,7 @@ export default function AddExpenseForm() {
             expense_date: data.date,
             category_id: data.category_id,
             payment_method_id: data.payment_method_id,
-            paid_by_id: data.paid_by_id === 'me' ? null : data.paid_by_id,
+            payer_id: data.payer_id || null,
             ...(photoUrl ? { receipt_photo_url: photoUrl } : {})
           })
           .eq('id', id);
@@ -153,7 +153,7 @@ export default function AddExpenseForm() {
             expense_date: data.date,
             category_id: data.category_id,
             payment_method_id: data.payment_method_id,
-            paid_by_id: data.paid_by_id === 'me' ? null : data.paid_by_id,
+            payer_id: data.payer_id || null,
             receipt_photo_url: photoUrl
           }])
           .select()
@@ -179,16 +179,6 @@ export default function AddExpenseForm() {
             amount_owed: Number(split.amount_owed),
             is_settled: false
           });
-        });
-      }
-
-      // If someone else paid, I owe them the total amount
-      if (data.paid_by_id && data.paid_by_id !== 'me') {
-        splitInserts.push({
-          expense_id: expenseId,
-          person_id: data.paid_by_id,
-          amount_owed: -Number(data.amount),
-          is_settled: false
         });
       }
 
@@ -307,16 +297,16 @@ export default function AddExpenseForm() {
 
             {/* Paid By Input */}
             <div className="group">
-              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Paid By Who</label>
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Who Paid?</label>
               <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
                 <div className="w-6 h-6 rounded-full bg-secondary/20 flex items-center justify-center mr-3">
                   <span className="text-xs font-bold text-secondary">@</span>
                 </div>
                 <select 
-                  {...register("paid_by_id", { required: true })} 
+                  {...register("payer_id", { required: true })} 
                   className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0 appearance-none"
                 >
-                  <option value="me">Me</option>
+                  <option value="">Select Payer...</option>
                   {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>

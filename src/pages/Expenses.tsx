@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Expense, Category } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, Utensils, Plane, Monitor, HeartPulse, ReceiptText, ChevronRight } from 'lucide-react';
+import { Search, Utensils, Plane, Monitor, HeartPulse, ReceiptText, ChevronRight, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +32,24 @@ export default function Expenses() {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this expense?')) return;
+
+    try {
+      // Delete splits first to avoid foreign key constraint errors if ON DELETE CASCADE is not set
+      await supabase.from('expense_splits').delete().eq('expense_id', id);
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      
+      if (error) throw error;
+
+      setExpenses(expenses.filter(exp => exp.id !== id));
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      alert('Failed to delete expense.');
     }
   };
 
@@ -143,13 +161,22 @@ export default function Expenses() {
                         <p className="text-xs text-gray-500">{exp.category?.name || 'Uncategorized'}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-extrabold text-gray-900">
-                        -RM {Number(exp.total_amount).toFixed(2)}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        {format(new Date(exp.created_at), 'hh:mm a')}
-                      </p>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="font-extrabold text-gray-900">
+                          -RM {Number(exp.total_amount).toFixed(2)}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          {format(new Date(exp.created_at), 'hh:mm a')}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => handleDelete(e, exp.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                        aria-label="Delete expense"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
                 ))}

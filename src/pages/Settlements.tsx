@@ -1,18 +1,28 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ExpenseSplit, Person } from '@/types';
-import { CheckCircle2, MessageCircle, ExternalLink, X } from 'lucide-react';
+import { 
+  CheckCircle2, 
+  MessageCircle, 
+  ChevronRight, 
+  Plus, 
+  Send,
+  CreditCard,
+  User as UserIcon,
+  ReceiptText
+} from 'lucide-react';
 import { format } from 'date-fns';
+import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
 export default function Settlements() {
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Payment Modal State
-  const [selectedSplit, setSelectedSplit] = useState<ExpenseSplit | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Identify "Me" - Replace with your actual logic to find your user record
+  const me = people.find(p => p.name.toLowerCase() === 'me');
 
   useEffect(() => {
     fetchData();
@@ -39,249 +49,178 @@ export default function Settlements() {
     }
   };
 
-  const openPaymentModal = (split: ExpenseSplit) => {
-    setSelectedSplit(split);
-    setPaymentAmount(Math.abs(Number(split.amount_owed)).toFixed(2));
-  };
-
-  const closePaymentModal = () => {
-    setSelectedSplit(null);
-    setPaymentAmount('');
-  };
-
-  const handlePayment = async () => {
-    if (!selectedSplit || !paymentAmount) return;
-    
-    const amountToPay = parseFloat(paymentAmount);
-    if (isNaN(amountToPay) || amountToPay <= 0) {
-      alert("Please enter a valid amount.");
-      return;
-    }
-
-    setIsSubmitting(true);
+  const markAsSettled = async (splitId: string) => {
     try {
-      const currentOwed = Number(selectedSplit.amount_owed);
-      const isNegative = currentOwed < 0;
-      
-      // If currentOwed is negative (I owe them), adding payment increases it towards 0
-      // If currentOwed is positive (they owe me), subtracting payment decreases it towards 0
-      const remainingAmount = isNegative 
-        ? currentOwed + amountToPay 
-        : currentOwed - amountToPay;
-      
-      const isSettled = Math.abs(remainingAmount) <= 0.01; // Account for floating point precision
-      
       const { error } = await supabase
         .from('expense_splits')
-        .update({ 
-          amount_owed: isSettled ? 0 : remainingAmount,
-          is_settled: isSettled 
-        })
-        .eq('id', selectedSplit.id);
+        .update({ is_settled: true })
+        .eq('id', splitId);
 
       if (error) throw error;
-      
-      // Optimistic update
-      if (isSettled) {
-        setSplits(splits.filter(s => s.id !== selectedSplit.id));
-      } else {
-        setSplits(splits.map(s => 
-          s.id === selectedSplit.id 
-            ? { ...s, amount_owed: remainingAmount } 
-            : s
-        ));
-      }
-      
-      closePaymentModal();
+      setSplits(splits.filter(s => s.id !== splitId));
     } catch (error) {
-      console.error('Error processing payment:', error);
-      alert('Failed to process payment.');
-    } finally {
-      setIsSubmitting(false);
+      console.error('Error marking as settled:', error);
     }
   };
 
   const getShareUrl = (token: string) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/shared/settlement/${token}`;
+    return `${window.location.origin}/shared/settlement/${token}`;
   };
 
   const sendWhatsAppReminder = (person: Person, amount: number) => {
     const shareUrl = getShareUrl(person.share_token);
     const message = `Hey ${person.name}! Just a quick update on our shared expenses. Your current outstanding share is RM ${amount.toFixed(2)}. You can view the breakdown and receipt photos here: ${shareUrl}`;
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  // Group by person
-  const balancesByPerson = people.map(person => {
-    const personSplits = splits.filter(s => s.person_id === person.id);
-    const totalOwed = personSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
-    return { person, splits: personSplits, totalOwed };
-  }).filter(b => b.splits.length > 0);
+  // Group balances by person
+  const balancesByPerson = people
+    .filter(p => p.id !== me?.id)
+    .map(person => {
+      const personSplits = splits.filter(s => s.person_id === person.id);
+      const totalOwed = personSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+      return { person, splits: personSplits, totalOwed };
+    })
+    .filter(b => b.totalOwed > 0);
 
-  if (loading) return <div className="p-4 text-center">Loading settlements...</div>;
+  // Summary Totals
+  const totalClaimPending = balancesByPerson.reduce((sum, b) => sum + b.totalOwed, 0);
+  
+  // This will sum up splits where YOU owe someone else (requires payer_id logic)
+  const totalIOwe = splits
+    .filter(s => s.person_id === me?.id)
+    .reduce((sum, s) => sum + Number(s.amount_owed), 0);
+
+  if (loading) return <div className="p-8 text-center text-gray-500">Loading settlements...</div>;
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Settlements</h2>
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="pb-32"
+    >
+      {/* Page Title & Massive Header */}
+      <div className="mb-12">
+        <h1 className="font-headline font-extrabold text-5xl md:text-7xl tracking-tighter mb-8 leading-none">
+          Owed & <br/><span className="text-gray-300">Owned</span>
+        </h1>
 
-      {balancesByPerson.length === 0 ? (
-        <div className="bg-white p-8 rounded-xl shadow-sm border text-center">
-          <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-          <p className="text-gray-600 font-medium">All settled up!</p>
-          <p className="text-sm text-gray-400 mt-1">No pending claims found.</p>
+        {/* Summary Hero Card */}
+        <div className="mesh-gradient rounded-3xl p-8 md:p-12 text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-end gap-8">
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-tertiary-fixed opacity-10 rounded-full blur-3xl" />
+          
+          <div className="w-full md:w-auto">
+            <p className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Total Owed to You</p>
+            <h2 className="font-headline font-extrabold text-6xl md:text-7xl tracking-tighter text-tertiary-fixed">
+              RM {totalClaimPending.toFixed(2)}
+            </h2>
+          </div>
+          
+          <div className="w-full md:w-auto text-right">
+            <p className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Total You Owe</p>
+            <p className="font-headline font-extrabold text-4xl md:text-5xl tracking-tighter text-red-400">
+              -RM {totalIOwe.toFixed(2)}
+            </p>
+          </div>
         </div>
-      ) : (
-        balancesByPerson.map(({ person, splits, totalOwed }) => (
-          <div key={person.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
-                <p className="text-sm text-gray-500">
-                  {totalOwed > 0 ? (
-                    <>Owes you <span className="font-semibold text-red-600">RM {totalOwed.toFixed(2)}</span></>
-                  ) : totalOwed < 0 ? (
-                    <>You owe <span className="font-semibold text-orange-600">RM {Math.abs(totalOwed).toFixed(2)}</span></>
-                  ) : (
-                    <span className="font-semibold text-green-600">Settled</span>
-                  )}
-                </p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => sendWhatsAppReminder(person, totalOwed)}
-                  className="flex items-center space-x-1 bg-green-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span className="hidden sm:inline">Remind</span>
-                </button>
-              </div>
-            </div>
+      </div>
+
+      {/* People Grid (Bento Style Layout) */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        {balancesByPerson.length === 0 ? (
+          <div className="md:col-span-12 bg-white rounded-3xl p-12 text-center border border-dashed border-gray-200">
+            <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-gray-900">All Settled Up</h3>
+            <p className="text-gray-500">No pending claims found from your sisters.</p>
+          </div>
+        ) : (
+          balancesByPerson.map(({ person, splits: personSplits, totalOwed }, index) => {
+            // Make the first card larger (col-span-8) for a "Bento" look
+            const isLarge = index === 0;
             
-            <div className="divide-y">
-              {splits.map(split => (
-                <div key={split.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div>
-                    <p className="font-medium text-gray-900">{split.expense?.description}</p>
-                    <p className="text-xs text-gray-500">
-                      {split.expense?.expense_date ? format(new Date(split.expense.expense_date), 'MMM d, yyyy') : 'Unknown date'}
-                      {' • '}
-                      Total: RM {Number(split.expense?.total_amount || 0).toFixed(2)}
-                    </p>
+            return (
+              <section 
+                key={person.id}
+                className={cn(
+                  "bg-white rounded-3xl p-6 md:p-8 shadow-sm transition-all hover:shadow-md border border-gray-100",
+                  isLarge ? "md:col-span-8" : "md:col-span-4"
+                )}
+              >
+                <div className={cn(
+                  "flex justify-between gap-6 mb-8",
+                  isLarge ? "flex-col md:flex-row md:items-center" : "flex-col items-center text-center"
+                )}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-gray-400">
+                      {person.name.charAt(0)}
+                    </div>
+                    <div className={isLarge ? "text-left" : "text-center"}>
+                      <h3 className="font-headline font-extrabold text-2xl tracking-tight">{person.name}</h3>
+                      <p className="text-gray-400 text-xs">Sister / Family</p>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <p className={`font-bold ${Number(split.amount_owed) < 0 ? 'text-orange-600' : 'text-gray-900'}`}>
-                      {Number(split.amount_owed) < 0 ? 'You owe ' : ''}RM {Math.abs(Number(split.amount_owed)).toFixed(2)}
-                    </p>
-                    <button
-                      onClick={() => openPaymentModal(split)}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                  
+                  <div className={isLarge ? "text-right" : "text-center"}>
+                    <span className="block font-headline font-extrabold text-3xl text-green-600">
+                      +RM {totalOwed.toFixed(2)}
+                    </span>
+                    <button 
+                      onClick={() => sendWhatsAppReminder(person, totalOwed)}
+                      className="mt-4 px-6 py-2 bg-black text-white rounded-full font-bold text-xs hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 mx-auto md:ml-auto"
                     >
-                      Mark Paid
+                      <MessageCircle className="w-4 h-4" />
+                      Remind
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-            
-            <div className="p-3 bg-gray-50 border-t flex justify-end">
-               <a 
-                 href={getShareUrl(person.share_token)} 
-                 target="_blank" 
-                 rel="noopener noreferrer"
-                 className="text-xs text-gray-500 hover:text-blue-600 flex items-center space-x-1"
-               >
-                 <span>View Magic Link</span>
-                 <ExternalLink className="w-3 h-3" />
-               </a>
-            </div>
-          </div>
-        ))
-      )}
 
-      {/* Payment Modal */}
-      {selectedSplit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100">
-              <h3 className="text-xl font-bold text-gray-900">Record Payment</h3>
-              <button 
-                onClick={closePaymentModal}
-                className="p-2 rounded-full hover:bg-gray-100 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Expense</p>
-                <p className="text-gray-900 font-medium">{selectedSplit.expense?.description}</p>
-              </div>
-              
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <p className="text-sm font-medium text-blue-800 mb-1">Total Remaining Balance</p>
-                <p className="text-2xl font-bold text-blue-900">RM {Math.abs(Number(selectedSplit.amount_owed)).toFixed(2)}</p>
-              </div>
-              
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
-                  Payment Amount
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">RM</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max={Math.abs(Number(selectedSplit.amount_owed))}
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-medium text-lg"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={() => setPaymentAmount(Math.abs(Number(selectedSplit.amount_owed)).toFixed(2))}
-                    className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Full Amount
-                  </button>
-                  <button
-                    onClick={() => setPaymentAmount((Math.abs(Number(selectedSplit.amount_owed)) / 2).toFixed(2))}
-                    className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Half Amount
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-6 bg-gray-50 border-t border-gray-100 flex gap-3">
-              <button
-                onClick={closePaymentModal}
-                className="flex-1 py-3 px-4 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePayment}
-                disabled={isSubmitting || !paymentAmount || parseFloat(paymentAmount) <= 0}
-                className="flex-1 py-3 px-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5" />
+                {/* Individual Transactions (Only show in large cards) */}
+                {isLarge && (
+                  <div className="space-y-3">
+                    {personSplits.slice(0, 3).map(split => (
+                      <div key={split.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group hover:bg-slate-100 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <ReceiptText className="text-gray-400 w-5 h-5" />
+                          <div>
+                            <p className="font-bold text-sm text-gray-900">{split.expense?.description}</p>
+                            <p className="text-[10px] text-gray-400">
+                              {split.expense?.expense_date && format(new Date(split.expense.expense_date), 'MMM d, yyyy')}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="font-bold text-gray-900">RM {Number(split.amount_owed).toFixed(2)}</span>
+                          <button 
+                            onClick={() => markAsSettled(split.id)}
+                            className="p-2 bg-white rounded-full text-blue-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                Confirm Payment
-              </button>
-            </div>
+              </section>
+            );
+          })
+        )}
+
+        {/* Quick Action Bento Box */}
+        <Link 
+          to="/add"
+          className="md:col-span-6 bg-black rounded-3xl p-8 shadow-xl flex items-center justify-between text-white overflow-hidden relative group active:scale-[0.98] transition-transform"
+        >
+          <div className="relative z-10">
+            <h3 className="font-headline font-extrabold text-3xl tracking-tight mb-2">Split a Bill</h3>
+            <p className="text-gray-400 text-sm max-w-[200px]">Create a new shared expense in seconds.</p>
           </div>
-        </div>
-      )}
-    </div>
+          <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center relative z-10 group-hover:bg-white/20 transition-all">
+            <Plus className="text-white w-10 h-10 group-hover:rotate-90 transition-transform duration-300" />
+          </div>
+          <div className="absolute right-[-10%] bottom-[-20%] w-48 h-48 bg-white/5 rounded-full blur-3xl" />
+        </Link>
+      </div>
+    </motion.div>
   );
 }

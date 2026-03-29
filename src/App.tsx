@@ -11,6 +11,7 @@ import Settlements from './pages/Settlements';
 import Settings from './pages/Settings';
 import SharedSettlement from './pages/SharedSettlement';
 import Expenses from './pages/Expenses';
+import PersonDetail from './pages/PersonDetail';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="add" element={<AddExpense />} />
           <Route path="edit/:id" element={<AddExpense />} />
           <Route path="settlements" element={<Settlements />} />
+          <Route path="person/:id" element={<PersonDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         {/* Public read-only route */}
