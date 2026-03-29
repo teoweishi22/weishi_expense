@@ -33,9 +33,11 @@ export default function Settings() {
       if (pmRes.data) setPaymentMethods(pmRes.data);
       if (peopleRes.data) {
         setPeople(peopleRes.data);
-        const me = peopleRes.data.find(p => p.name === 'Me');
-        if (me && me.monthly_limit) {
-          setMonthlyLimit(me.monthly_limit.toString());
+        // Case-insensitive search for 'Me'
+        const me = peopleRes.data.find(p => p.name.toLowerCase() === 'me');
+        if (me) {
+          // If the limit exists in DB (even if 0), set it
+          setMonthlyLimit(me.monthly_limit?.toString() || '1000');
         }
       }
     } catch (error) {
@@ -46,7 +48,7 @@ export default function Settings() {
   };
 
   const saveMonthlyLimit = async () => {
-    const me = people.find(p => p.name === 'Me');
+    const me = people.find(p => p.name.toLowerCase() === 'me');
     if (!me) {
       alert("Could not find a person named 'Me'. Please add one first.");
       return;
@@ -60,12 +62,16 @@ export default function Settings() {
 
     setIsSavingLimit(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('people')
         .update({ monthly_limit: limitValue })
-        .eq('id', me.id);
+        .eq('id', me.id)
+        .select();
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No rows were updated. Please check your Supabase RLS policies for the UPDATE operation.");
+      }
       
       // Update local state
       setPeople(people.map(p => p.id === me.id ? { ...p, monthly_limit: limitValue } : p));

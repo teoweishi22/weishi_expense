@@ -59,7 +59,7 @@ export default function Dashboard() {
   const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
   
   // 1. Find the "Me" person (assuming your name is "Me" or you have a specific ID)
-  const me = people.find(p => p.name === "Me"); 
+  const me = people.find(p => p.name.toLowerCase() === "me"); 
 
   // 2. Calculate "Total I Owe"
   // This sums up all splits where YOU are the person owing, and someone ELSE was the payer.
@@ -104,7 +104,10 @@ export default function Dashboard() {
   }
 
   // 1. Add this logic above your return statement
-  const monthlyLimit = me?.monthly_limit || 1000; // Use fetched limit or default to RM 1000
+  // Use a strict check for the limit
+  const monthlyLimit = (me && me.monthly_limit !== undefined && me.monthly_limit !== null) 
+    ? Number(me.monthly_limit) 
+    : 1000;
   const percentage = Math.min((totalExpenses / monthlyLimit) * 100, 100);
 
   // Determine bar color based on percentage
@@ -112,6 +115,13 @@ export default function Dashboard() {
     if (percentage >= 85) return 'bg-red-500';      // Red for high spending
     if (percentage >= 50) return 'bg-yellow-400';   // Yellow for warning
     return 'bg-tertiary-fixed';                    // Green (default theme color) for safe
+  };
+
+  // Determine text color based on percentage
+  const getTextColor = () => {
+    if (percentage >= 85) return 'text-red-500 opacity-100';      
+    if (percentage >= 50) return 'text-yellow-400 opacity-100';   
+    return 'text-white opacity-60'; // Keep it subtle when safe
   };
 
   return (
@@ -174,8 +184,10 @@ export default function Dashboard() {
                   ></div>
                 </div>
                 
-                <p className="text-[10px] opacity-40">
-                  RM {(monthlyLimit - totalExpenses).toFixed(2)} remaining
+                <p className={`text-[10px] font-medium transition-colors ${getTextColor()}`}>
+                  {totalExpenses > monthlyLimit 
+                    ? `RM ${(totalExpenses - monthlyLimit).toFixed(2)} over limit` 
+                    : `RM ${(monthlyLimit - totalExpenses).toFixed(2)} remaining`}
                 </p>
               </div>
               <div className="text-right">

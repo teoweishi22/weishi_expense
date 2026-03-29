@@ -15,7 +15,7 @@ export type Person = {
   id: string;
   name: string;
   share_token: string;
-  monthly_limit?: number | null;
+  monthly_limit?: number;
   created_at: string;
 };
 
