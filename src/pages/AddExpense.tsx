@@ -34,6 +34,7 @@ export default function AddExpenseForm() {
   const [people, setPeople] = useState<Person[]>([]);
   const [isSplitting, setIsSplitting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
 
   const { register, control, handleSubmit, watch, setValue, reset } = useForm<FormData>({
     defaultValues: {
@@ -69,6 +70,7 @@ export default function AddExpenseForm() {
           .single();
 
         if (expenseData && !expenseError) {
+          setExistingPhotoUrl(expenseData.receipt_photo_url);
           reset({
             description: expenseData.description,
             amount: expenseData.total_amount,
@@ -314,23 +316,42 @@ export default function AddExpenseForm() {
           </section>
 
           {/* Attachment Bento Element */}
-          <label className="bg-surface-container-lowest rounded-xl p-6 flex items-center justify-between shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-lg bg-surface-container-low flex items-center justify-center">
-                <Receipt className="text-secondary w-6 h-6" />
+          <div className="space-y-4">
+            <label className="bg-surface-container-lowest rounded-xl p-6 flex items-center justify-between shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 rounded-lg bg-surface-container-low flex items-center justify-center">
+                  <Receipt className="text-secondary w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-headline font-semibold text-sm">Add Receipt</h4>
+                  <p className="font-body text-xs text-secondary">
+                    {watch('receipt_photo')?.[0] ? watch('receipt_photo')[0].name : 'Scan or upload a photo'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-headline font-semibold text-sm">Add Receipt</h4>
-                <p className="font-body text-xs text-secondary">
-                  {watch('receipt_photo')?.[0] ? watch('receipt_photo')[0].name : 'Scan or upload a photo'}
-                </p>
+              <div className="bg-surface-container-high w-8 h-8 rounded-full flex items-center justify-center">
+                <Plus className="text-primary w-4 h-4" />
               </div>
-            </div>
-            <div className="bg-surface-container-high w-8 h-8 rounded-full flex items-center justify-center">
-              <Plus className="text-primary w-4 h-4" />
-            </div>
-            <input type="file" accept="image/*" {...register("receipt_photo")} className="hidden" />
-          </label>
+              <input type="file" accept="image/*" {...register("receipt_photo")} className="hidden" />
+            </label>
+
+            {existingPhotoUrl && !watch('receipt_photo')?.[0] && (
+              <div className="bg-surface-container-lowest rounded-xl p-4 shadow-sm">
+                <p className="font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3">Existing Receipt</p>
+                <div className="relative rounded-lg overflow-hidden border border-outline-variant/20">
+                  <img src={existingPhotoUrl} alt="Receipt" className="w-full h-auto max-h-64 object-contain bg-surface-container-low" />
+                  <a 
+                    href={existingPhotoUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-md hover:bg-black transition-colors"
+                  >
+                    View Full Size
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Split Bill Section */}
           <section className="space-y-4">
