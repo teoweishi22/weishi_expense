@@ -25,10 +25,12 @@ export type Expense = {
   expense_date: string;
   category_id: string;
   payment_method_id: string;
+  paid_by_id?: string | null;
   receipt_photo_url: string | null;
   created_at: string;
   category?: Category;
   payment_method?: PaymentMethod;
+  paid_by?: Person;
   expense_splits?: ExpenseSplit[];
 };
 

@@ -5,7 +5,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, L
 import { format } from 'date-fns';
 import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag } from 'lucide-react';
 
+import { useNavigate } from 'react-router-dom';
+
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +53,15 @@ export default function Dashboard() {
   };
 
   const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
-  const totalClaimPending = splits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+  const totalClaimPending = splits.reduce((sum, split) => {
+    const amount = Number(split.amount_owed);
+    return amount > 0 ? sum + amount : sum;
+  }, 0);
   
-  const totalIOwe = 0; // Simplified for this scope
+  const totalIOwe = splits.reduce((sum, split) => {
+    const amount = Number(split.amount_owed);
+    return amount < 0 ? sum + Math.abs(amount) : sum;
+  }, 0);
 
   const expensesByCategory = expenses.reduce((acc, exp) => {
     const catName = exp.category?.name || 'Uncategorized';
@@ -90,7 +99,7 @@ export default function Dashboard() {
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuCtbOvu0tK7A-kdAXTHgz8HfswSk38qBahXxKFWsNX6ZT_D8hdkXCNOVMNExGWKU91DG5vNpRTmzbrlLrdcFHXfrI04hz6iCFoWp4U2nLQIMGZJ78HWDXtJui5lm2L__kpGgy164uyJqfnQ0Ff0WNwMbfhWoPdHL5FP2HUR-GWAqS5-d6gPn3pLVQFngNMejHSK6bUHyVI27K_TlMzRczPK3nT3sNHDRGwXts6gTO7VP5ldP_FWO53x74Q89oa9mPAvMjsOPc19NOQ"
             />
           </div>
-          <h1 className="font-headline font-extrabold tracking-tight text-xl text-black">Precision</h1>
+          <h1 className="font-headline font-extrabold tracking-tight text-xl text-black">My Expenses Track</h1>
         </div>
         <div className="flex items-center gap-4">
           <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
@@ -203,12 +212,21 @@ export default function Dashboard() {
         <section className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="font-headline font-extrabold text-xl tracking-tight">Recent Transactions</h3>
-            <button className="font-label text-sm font-bold text-primary hover:opacity-70 transition-opacity">View All</button>
+            <button 
+              onClick={() => navigate('/expenses')}
+              className="font-label text-sm font-bold text-primary hover:opacity-70 transition-opacity"
+            >
+              View All
+            </button>
           </div>
           
           <div className="space-y-3">
             {expenses.slice(0, 5).map((expense) => (
-              <div key={expense.id} className="bg-surface-container-lowest rounded-lg p-5 flex items-center justify-between hover:translate-x-2 transition-transform duration-300 group cursor-pointer">
+              <div 
+                key={expense.id} 
+                onClick={() => navigate(`/edit/${expense.id}`)}
+                className="bg-surface-container-lowest rounded-lg p-5 flex items-center justify-between hover:translate-x-2 transition-transform duration-300 group cursor-pointer"
+              >
                 <div className="flex items-center gap-4">
                   <div 
                     className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors"

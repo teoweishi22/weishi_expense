@@ -20,6 +20,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="add" element={<AddExpense />} />
+          <Route path="edit/:id" element={<AddExpense />} />
           <Route path="settlements" element={<Settlements />} />
           <Route path="settings" element={<Settings />} />
         </Route>

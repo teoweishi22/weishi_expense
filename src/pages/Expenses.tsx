@@ -5,7 +5,10 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { Search, Utensils, Plane, Monitor, HeartPulse, ReceiptText, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+import { useNavigate } from 'react-router-dom';
+
 export default function Expenses() {
+  const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,6 +128,7 @@ export default function Expenses() {
                 {items.map(exp => (
                   <div 
                     key={exp.id} 
+                    onClick={() => navigate(`/edit/${exp.id}`)}
                     className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-black/[0.03] active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <div className="flex items-center gap-4">

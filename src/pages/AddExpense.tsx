@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Category, PaymentMethod, Person } from '@/types';
 import { 
@@ -20,12 +20,15 @@ type FormData = {
   date: string;
   category_id: string;
   payment_method_id: string;
+  paid_by_id: string;
   receipt_photo: FileList;
   splits: { person_id: string; amount_owed: string | number }[];
 };
 
 export default function AddExpenseForm() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditing = !!id;
   const [categories, setCategories] = useState<Category[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -35,6 +38,7 @@ export default function AddExpenseForm() {
   const { register, control, handleSubmit, watch, setValue, reset } = useForm<FormData>({
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
+      paid_by_id: 'me',
       splits: []
     }
   });
@@ -55,9 +59,40 @@ export default function AddExpenseForm() {
       setCategories(catsRes.data || []);
       setPaymentMethods(payRes.data || []);
       setPeople(peopleRes.data || []);
+
+      if (isEditing) {
+        // Fetch existing expense data
+        const { data: expenseData, error: expenseError } = await supabase
+          .from('expenses')
+          .select('*, expense_splits(*)')
+          .eq('id', id)
+          .single();
+
+        if (expenseData && !expenseError) {
+          reset({
+            description: expenseData.description,
+            amount: expenseData.total_amount,
+            date: expenseData.expense_date,
+            category_id: expenseData.category_id,
+            payment_method_id: expenseData.payment_method_id,
+            paid_by_id: expenseData.paid_by_id || 'me',
+            splits: expenseData.expense_splits
+              ?.filter((split: any) => split.amount_owed > 0)
+              .map((split: any) => ({
+                person_id: split.person_id,
+                amount_owed: split.amount_owed
+              })) || []
+          });
+          
+          const hasPositiveSplits = expenseData.expense_splits?.some((split: any) => split.amount_owed > 0);
+          if (hasPositiveSplits) {
+            setIsSplitting(true);
+          }
+        }
+      }
     }
     fetchData();
-  }, []);
+  }, [id, isEditing, reset]);
 
   const totalAmount = watch("amount");
 
@@ -91,40 +126,83 @@ export default function AddExpenseForm() {
         }
       }
 
-      // 2. Insert core Expense
-      const { data: expenseData, error: expenseError } = await supabase
-        .from('expenses')
-        .insert([{
-          description: data.description,
-          total_amount: data.amount,
-          expense_date: data.date,
-          category_id: data.category_id,
-          payment_method_id: data.payment_method_id,
-          receipt_photo_url: photoUrl
-        }])
-        .select()
-        .single();
+      // 2. Insert or Update core Expense
+      let expenseId = id;
+      
+      if (isEditing) {
+        const { error: updateError } = await supabase
+          .from('expenses')
+          .update({
+            description: data.description,
+            total_amount: data.amount,
+            expense_date: data.date,
+            category_id: data.category_id,
+            payment_method_id: data.payment_method_id,
+            paid_by_id: data.paid_by_id === 'me' ? null : data.paid_by_id,
+            ...(photoUrl ? { receipt_photo_url: photoUrl } : {})
+          })
+          .eq('id', id);
+          
+        if (updateError) throw updateError;
+      } else {
+        const { data: expenseData, error: expenseError } = await supabase
+          .from('expenses')
+          .insert([{
+            description: data.description,
+            total_amount: data.amount,
+            expense_date: data.date,
+            category_id: data.category_id,
+            payment_method_id: data.payment_method_id,
+            paid_by_id: data.paid_by_id === 'me' ? null : data.paid_by_id,
+            receipt_photo_url: photoUrl
+          }])
+          .select()
+          .single();
 
-      if (expenseError) throw expenseError;
+        if (expenseError) throw expenseError;
+        expenseId = expenseData.id;
+      }
 
-      // 3. Insert Splits if applicable
+      // 3. Handle Splits if applicable
+      if (isEditing) {
+        // Delete existing splits first
+        await supabase.from('expense_splits').delete().eq('expense_id', id);
+      }
+      
+      const splitInserts = [];
+      
       if (isSplitting && data.splits.length > 0) {
-        const splitInserts = data.splits.map(split => ({
-          expense_id: expenseData.id,
-          person_id: split.person_id,
-          amount_owed: Number(split.amount_owed),
+        data.splits.forEach(split => {
+          splitInserts.push({
+            expense_id: expenseId,
+            person_id: split.person_id,
+            amount_owed: Number(split.amount_owed),
+            is_settled: false
+          });
+        });
+      }
+
+      // If someone else paid, I owe them the total amount
+      if (data.paid_by_id && data.paid_by_id !== 'me') {
+        splitInserts.push({
+          expense_id: expenseId,
+          person_id: data.paid_by_id,
+          amount_owed: -Number(data.amount),
           is_settled: false
-        }));
+        });
+      }
+
+      if (splitInserts.length > 0) {
         await supabase.from('expense_splits').insert(splitInserts);
       }
 
-      alert("Expense added successfully!");
+      alert(isEditing ? "Expense updated successfully!" : "Expense added successfully!");
       reset();
       setIsSplitting(false);
-      navigate('/');
+      navigate(-1); // Go back to the previous page
     } catch (error) {
-      console.error("Error adding expense:", error);
-      alert("Failed to add expense.");
+      console.error("Error saving expense:", error);
+      alert("Failed to save expense.");
     } finally {
       setIsSubmitting(false);
     }
@@ -139,12 +217,14 @@ export default function AddExpenseForm() {
       {/* Top Navigation */}
       <header className="fixed top-0 w-full flex justify-between items-center px-6 py-4 bg-slate-50/80 backdrop-blur-xl z-50">
         <button 
-          onClick={() => navigate('/')}
+          onClick={() => navigate(-1)}
           className="flex items-center justify-center w-10 h-10 rounded-full bg-surface-container-low active:scale-95 transition-transform"
         >
           <X className="text-primary w-6 h-6" />
         </button>
-        <h1 className="font-headline font-extrabold tracking-tight text-xl text-primary">New Transaction</h1>
+        <h1 className="font-headline font-extrabold tracking-tight text-xl text-primary">
+          {isEditing ? 'Edit Transaction' : 'New Transaction'}
+        </h1>
         <div className="w-10"></div> {/* Spacer for symmetry */}
       </header>
 
@@ -221,6 +301,23 @@ export default function AddExpenseForm() {
                 >
                   <option value="">Select Payment Method</option>
                   {paymentMethods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Paid By Input */}
+            <div className="group">
+              <label className="block font-label text-xs font-bold uppercase tracking-widest text-secondary mb-3 ml-1">Paid By Who</label>
+              <div className="relative flex items-center bg-surface-container-low rounded-2xl px-5 py-4 transition-all focus-within:bg-surface-container-high focus-within:ring-1 ring-outline-variant/10">
+                <div className="w-6 h-6 rounded-full bg-secondary/20 flex items-center justify-center mr-3">
+                  <span className="text-xs font-bold text-secondary">@</span>
+                </div>
+                <select 
+                  {...register("paid_by_id", { required: true })} 
+                  className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0 appearance-none"
+                >
+                  <option value="me">Me</option>
+                  {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
             </div>
@@ -325,7 +422,7 @@ export default function AddExpenseForm() {
               ) : (
                 <>
                   <CheckCircle className="w-6 h-6" />
-                  <span>Add Transaction</span>
+                  <span>{isEditing ? 'Update Transaction' : 'Add Transaction'}</span>
                 </>
               )}
             </button>
