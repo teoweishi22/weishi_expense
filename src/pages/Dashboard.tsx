@@ -80,23 +80,34 @@ export default function Dashboard() {
   // 1. Find the "Me" person (assuming your name is "Me" or you have a specific ID)
   const me = people.find(p => p.name.toLowerCase() === "me"); 
 
+  // Calculate net balances per person to provide a summarized view
+  const personBalances = people
+    .filter(p => p.id !== me?.id)
+    .map(person => {
+      // Amount they owe YOU (You were the payer, they were the person in split)
+      const theyOweMe = splits
+        .filter(s => s.person_id === person.id && s.expense?.payer_id === me?.id)
+        .reduce((sum, s) => sum + Number(s.amount_owed), 0);
+      
+      // Amount YOU owe them (They were the payer, you were the person in split)
+      const iOweThem = splits
+        .filter(s => s.person_id === me?.id && s.expense?.payer_id === person.id)
+        .reduce((sum, s) => sum + Number(s.amount_owed), 0);
+      
+      return { person, net: theyOweMe - iOweThem };
+    });
+
   // 2. Calculate "Total I Owe"
-  // This sums up all splits where YOU are the person owing, and someone ELSE was the payer.
-  const totalIOwe = splits.reduce((sum, split) => {
-    if (split.person_id === me?.id && split.expense?.payer_id !== me?.id) {
-      return sum + Number(split.amount_owed);
-    }
-    return sum;
-  }, 0);
+  // This sums up all net balances where you owe them more than they owe you.
+  const totalIOwe = personBalances
+    .filter(b => b.net < 0)
+    .reduce((sum, b) => sum + Math.abs(b.net), 0);
 
   // 3. Update "Claim Pending"
-  // This sums up all splits where SOMEONE ELSE is the person owing, and YOU were the payer.
-  const totalClaimPending = splits.reduce((sum, split) => {
-    if (split.person_id !== me?.id && split.expense?.payer_id === me?.id) {
-      return sum + Number(split.amount_owed);
-    }
-    return sum;
-  }, 0);
+  // This sums up all net balances where they owe you more than you owe them.
+  const totalClaimPending = personBalances
+    .filter(b => b.net > 0)
+    .reduce((sum, b) => sum + b.net, 0);
 
   const expensesByCategory = expenses.reduce((acc, exp) => {
     const catName = exp.category?.name || 'Uncategorized';

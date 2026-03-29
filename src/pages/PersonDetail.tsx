@@ -261,7 +261,7 @@ export default function PersonDetail() {
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-6">
           <div className="text-center space-y-1">
             <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Net Balance</p>
-            <h3 className={`text-5xl font-extrabold tracking-tighter ${netBalance > 0 ? 'text-red-500' : netBalance < 0 ? 'text-orange-500' : 'text-slate-900'}`}>
+            <h3 className={`text-5xl font-extrabold tracking-tighter ${netBalance > 0 ? 'text-green-600' : netBalance < 0 ? 'text-red-500' : 'text-slate-900'}`}>
               {netBalance > 0 ? '+' : netBalance < 0 ? '-' : ''}RM {Math.abs(netBalance).toFixed(2)}
             </h3>
             <p className="text-sm font-medium text-slate-500">

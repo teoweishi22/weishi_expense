@@ -161,14 +161,12 @@ export default function AddExpenseForm() {
       let expenseId = id;
 
       if (isEditing) {
-        const { data: updatedExpense, error: expenseError } = await supabase
+        const { error: expenseError } = await supabase
           .from('expenses')
           .update(expensePayload)
-          .eq('id', id)
-          .select();
+          .eq('id', id);
           
         if (expenseError) throw expenseError;
-        if (!updatedExpense || updatedExpense.length === 0) throw new Error("Update failed. You might not have permission to edit this transaction.");
       } else {
         // 2. Insert core Expense with payer_id
         const { data: expenseData, error: expenseError } = await supabase
@@ -250,7 +248,7 @@ export default function AddExpenseForm() {
               <input 
                 type="number" 
                 step="0.01"
-                {...register("amount", { required: true })} 
+                {...register("amount", { required: true, valueAsNumber: true })} 
                 className="w-full max-w-[280px] bg-transparent border-none text-center font-headline font-extrabold text-7xl tracking-tighter text-black focus:ring-0 p-0 placeholder:text-gray-100" 
                 placeholder="0.00" 
               />

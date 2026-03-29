@@ -73,23 +73,35 @@ export default function Settlements() {
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  // Group balances by person
+  // Net balances by person
   const balancesByPerson = people
     .filter(p => p.id !== me?.id)
     .map(person => {
-      const personSplits = splits.filter(s => s.person_id === person.id);
-      const totalOwed = personSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
-      return { person, splits: personSplits, totalOwed };
+      // Amount they owe YOU (You were the payer, they were the person in split)
+      const theyOweMeSplits = splits.filter(s => s.person_id === person.id && s.expense?.payer_id === me?.id);
+      const theyOweMe = theyOweMeSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+      
+      // Amount YOU owe them (They were the payer, you were the person in split)
+      const iOweThemSplits = splits.filter(s => s.person_id === me?.id && s.expense?.payer_id === person.id);
+      const iOweThem = iOweThemSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+      
+      const net = theyOweMe - iOweThem;
+      
+      // Combine splits for display
+      const allRelatedSplits = [...theyOweMeSplits, ...iOweThemSplits];
+      
+      return { person, splits: allRelatedSplits, totalOwed: net };
     })
-    .filter(b => b.totalOwed > 0);
+    .filter(b => b.totalOwed !== 0);
 
   // Summary Totals
-  const totalClaimPending = balancesByPerson.reduce((sum, b) => sum + b.totalOwed, 0);
+  const totalClaimPending = balancesByPerson
+    .filter(b => b.totalOwed > 0)
+    .reduce((sum, b) => sum + b.totalOwed, 0);
   
-  // This will sum up splits where YOU owe someone else (requires payer_id logic)
-  const totalIOwe = splits
-    .filter(s => s.person_id === me?.id)
-    .reduce((sum, s) => sum + Number(s.amount_owed), 0);
+  const totalIOwe = balancesByPerson
+    .filter(b => b.totalOwed < 0)
+    .reduce((sum, b) => sum + Math.abs(b.totalOwed), 0);
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading settlements...</div>;
 
@@ -161,16 +173,21 @@ export default function Settlements() {
                   </div>
                   
                   <div className={isLarge ? "text-right" : "text-center"}>
-                    <span className="block font-headline font-extrabold text-3xl text-green-600">
-                      +RM {totalOwed.toFixed(2)}
+                    <span className={cn(
+                      "block font-headline font-extrabold text-3xl",
+                      totalOwed > 0 ? "text-green-600" : "text-red-600"
+                    )}>
+                      {totalOwed > 0 ? '+' : '-'}RM {Math.abs(totalOwed).toFixed(2)}
                     </span>
-                    <button 
-                      onClick={() => sendWhatsAppReminder(person, totalOwed)}
-                      className="mt-4 px-6 py-2 bg-black text-white rounded-full font-bold text-xs hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 mx-auto md:ml-auto"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Remind
-                    </button>
+                    {totalOwed > 0 && (
+                      <button 
+                        onClick={() => sendWhatsAppReminder(person, totalOwed)}
+                        className="mt-4 px-6 py-2 bg-black text-white rounded-full font-bold text-xs hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 mx-auto md:ml-auto"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        Remind
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -197,7 +214,12 @@ export default function Settlements() {
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span className="font-bold text-gray-900">RM {Number(split.amount_owed).toFixed(2)}</span>
+                          <span className={cn(
+                            "font-bold",
+                            split.expense?.payer_id === me?.id ? "text-green-600" : "text-red-600"
+                          )}>
+                            {split.expense?.payer_id === me?.id ? '+' : '-'}RM {Number(split.amount_owed).toFixed(2)}
+                          </span>
                           <button 
                             onClick={() => markAsSettled(split.id)}
                             className="p-2 bg-white rounded-full text-blue-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
