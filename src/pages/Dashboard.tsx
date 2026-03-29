@@ -245,10 +245,14 @@ export default function Dashboard() {
               >
                 <div className="flex items-center gap-4">
                   <div 
-                    className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors"
+                    className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors overflow-hidden relative"
                     style={{ color: expense.category?.color_code }}
                   >
-                    {getCategoryIcon(expense.category?.name || '')}
+                    {expense.receipt_photo_url ? (
+                      <img src={expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                    ) : (
+                      getCategoryIcon(expense.category?.name || '')
+                    )}
                   </div>
                   <div>
                     <p className="font-bold text-black">{expense.description}</p>

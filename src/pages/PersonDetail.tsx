@@ -311,10 +311,14 @@ export default function PersonDetail() {
                   <div key={split.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div 
-                        className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+                        className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
                         style={{ backgroundColor: `${categoryColor}20`, color: categoryColor }}
                       >
-                        {getCategoryIcon(split.expense?.category?.name)}
+                        {split.expense?.receipt_photo_url ? (
+                          <img src={split.expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                        ) : (
+                          getCategoryIcon(split.expense?.category?.name)
+                        )}
                       </div>
                       <div className="truncate">
                         <p className="font-bold text-slate-900 truncate">{split.expense?.description}</p>

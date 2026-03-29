@@ -59,7 +59,20 @@ export default function AddExpenseForm() {
       ]);
       setCategories(catsRes.data || []);
       setPaymentMethods(payRes.data || []);
-      setPeople(peopleRes.data || []);
+      
+      let fetchedPeople = peopleRes.data || [];
+      let mePerson = fetchedPeople.find(p => p.name.toLowerCase() === 'me' || p.name.toLowerCase() === 'myself');
+      
+      // Auto-create "Me" if it doesn't exist to ensure personal accounting works
+      if (!mePerson) {
+        const { data: newMe } = await supabase.from('people').insert([{ name: 'Me' }]).select();
+        if (newMe && newMe.length > 0) {
+          mePerson = newMe[0];
+          fetchedPeople = [...fetchedPeople, mePerson];
+        }
+      }
+      
+      setPeople(fetchedPeople);
 
       if (isEditing) {
         // Fetch existing expense data
@@ -91,10 +104,13 @@ export default function AddExpenseForm() {
             setIsSplitting(true);
           }
         }
+      } else if (mePerson) {
+        // Set "Me" as the default payer for new expenses
+        setValue('payer_id', mePerson.id);
       }
     }
     fetchData();
-  }, [id, isEditing, reset]);
+  }, [id, isEditing, reset, setValue]);
 
   const totalAmount = watch("amount");
 
@@ -120,7 +136,10 @@ export default function AddExpenseForm() {
           .from('receipts')
           .upload(fileName, file);
         
-        if (!uploadError) {
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          alert(`Failed to upload photo: ${uploadError.message}. Please ensure the 'receipts' storage bucket exists and is public.`);
+        } else {
           const { data: publicUrlData } = supabase.storage
             .from('receipts')
             .getPublicUrl(fileName);
@@ -309,7 +328,11 @@ export default function AddExpenseForm() {
                   className="bg-transparent border-none p-0 w-full font-body text-base text-primary focus:ring-0 appearance-none"
                 >
                   <option value="">Select Payer...</option>
-                  {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {people.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name.toLowerCase() === 'me' || p.name.toLowerCase() === 'myself' ? 'Myself (Me)' : p.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

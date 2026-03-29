@@ -180,7 +180,15 @@ export default function Settlements() {
                     {personSplits.slice(0, 3).map(split => (
                       <div key={split.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group hover:bg-slate-100 transition-colors">
                         <div className="flex items-center gap-4">
-                          <ReceiptText className="text-gray-400 w-5 h-5" />
+                          {split.expense?.receipt_photo_url ? (
+                            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                              <img src={split.expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                              <ReceiptText className="text-gray-400 w-5 h-5" />
+                            </div>
+                          )}
                           <div>
                             <p className="font-bold text-sm text-gray-900">{split.expense?.description}</p>
                             <p className="text-[10px] text-gray-400">

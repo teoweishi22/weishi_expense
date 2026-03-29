@@ -40,16 +40,37 @@ export default function Expenses() {
     if (!window.confirm('Are you sure you want to delete this expense?')) return;
 
     try {
+      const expenseToDelete = expenses.find(exp => exp.id === id);
+
       // Delete splits first to avoid foreign key constraint errors if ON DELETE CASCADE is not set
-      await supabase.from('expense_splits').delete().eq('expense_id', id);
-      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      const { data: splitsData, error: splitsError } = await supabase.from('expense_splits').delete().eq('expense_id', id).select();
+      if (splitsError) throw splitsError;
+      
+      // We don't throw if splitsData is empty because an expense might not have splits, 
+      // but if it fails silently due to RLS, the next step (deleting the expense) will likely fail due to foreign key constraints or its own RLS.
+
+      // Perform hard delete and select the deleted row to verify it actually deleted
+      const { data, error } = await supabase.from('expenses').delete().eq('id', id).select();
       
       if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        throw new Error("No rows were deleted. This is usually caused by missing DELETE permissions in your Supabase RLS policies. Please enable DELETE for this table.");
+      }
+
+      // Delete the receipt photo from storage if it exists
+      if (expenseToDelete?.receipt_photo_url) {
+        const urlParts = expenseToDelete.receipt_photo_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        if (fileName) {
+          await supabase.storage.from('receipts').remove([fileName]);
+        }
+      }
 
       setExpenses(expenses.filter(exp => exp.id !== id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting expense:', error);
-      alert('Failed to delete expense.');
+      alert(`Failed to delete expense: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -151,10 +172,14 @@ export default function Expenses() {
                   >
                     <div className="flex items-center gap-4">
                       <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white"
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white overflow-hidden relative"
                         style={{ backgroundColor: exp.category?.color_code || '#000' }}
                       >
-                        <ReceiptText className="w-6 h-6" />
+                        {exp.receipt_photo_url ? (
+                          <img src={exp.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                        ) : (
+                          <ReceiptText className="w-6 h-6" />
+                        )}
                       </div>
                       <div>
                         <h4 className="font-bold text-gray-900">{exp.description}</h4>

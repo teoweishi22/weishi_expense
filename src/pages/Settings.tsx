@@ -54,11 +54,15 @@ export default function Settings() {
 
   const deleteCategory = async (id: string) => {
     try {
-      const { error } = await supabase.from('categories').delete().eq('id', id);
+      const { data, error } = await supabase.from('categories').delete().eq('id', id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No rows were deleted. Please check your Supabase RLS policies for the DELETE operation.");
+      }
       setCategories(categories.filter(c => c.id !== id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting category:', error);
+      alert(`Failed to delete category: ${error.message}`);
     }
   };
 
@@ -79,11 +83,15 @@ export default function Settings() {
 
   const deletePaymentMethod = async (id: string) => {
     try {
-      const { error } = await supabase.from('payment_methods').delete().eq('id', id);
+      const { data, error } = await supabase.from('payment_methods').delete().eq('id', id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No rows were deleted. Please check your Supabase RLS policies for the DELETE operation.");
+      }
       setPaymentMethods(paymentMethods.filter(p => p.id !== id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting payment method:', error);
+      alert(`Failed to delete payment method: ${error.message}`);
     }
   };
 
@@ -104,11 +112,15 @@ export default function Settings() {
 
   const deletePerson = async (id: string) => {
     try {
-      const { error } = await supabase.from('people').delete().eq('id', id);
+      const { data, error } = await supabase.from('people').delete().eq('id', id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No rows were deleted. Please check your Supabase RLS policies for the DELETE operation.");
+      }
       setPeople(people.filter(p => p.id !== id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting person:', error);
+      alert(`Failed to delete person: ${error.message}`);
     }
   };
 
