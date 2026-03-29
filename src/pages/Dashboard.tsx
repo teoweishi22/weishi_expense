@@ -3,7 +3,8 @@ import { supabase } from '@/lib/supabase';
 import { Expense, ExpenseSplit, Person } from '@/types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { format } from 'date-fns';
-import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag } from 'lucide-react';
+import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag, X, Download } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -13,6 +14,24 @@ export default function Dashboard() {
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  const handleDownload = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `receipt-${new Date().getTime()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(blobUrl);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+    }
+  };
 
   useEffect(() => {
     fetchDashboardData();
@@ -200,7 +219,10 @@ export default function Dashboard() {
         {/* Stats Bento Grid */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Claim Pending Card */}
-          <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm flex items-center justify-between">
+          <div 
+            onClick={() => navigate('/expenses?filter=claim_pending')}
+            className="bg-surface-container-lowest rounded-xl p-6 shadow-sm flex items-center justify-between cursor-pointer hover:bg-surface-container-low transition-colors active:scale-[0.98]"
+          >
             <div className="space-y-1">
               <p className="font-label text-secondary text-sm font-medium">Claim Pending</p>
               <p className="font-headline font-extrabold text-3xl text-error tracking-tight">RM {totalClaimPending.toFixed(2)}</p>
@@ -211,7 +233,10 @@ export default function Dashboard() {
           </div>
           
           {/* Savings Goal Card (Total I Owe) */}
-          <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm flex items-center justify-between">
+          <div 
+            onClick={() => navigate('/expenses?filter=i_owe')}
+            className="bg-surface-container-lowest rounded-xl p-6 shadow-sm flex items-center justify-between cursor-pointer hover:bg-surface-container-low transition-colors active:scale-[0.98]"
+          >
             <div className="space-y-1">
               <p className="font-label text-secondary text-sm font-medium">Total I Owe</p>
               <p className="font-headline font-extrabold text-3xl text-on-tertiary-container tracking-tight">RM {totalIOwe.toFixed(2)}</p>
@@ -282,8 +307,14 @@ export default function Dashboard() {
               >
                 <div className="flex items-center gap-4">
                   <div 
-                    className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors overflow-hidden relative"
+                    className={`w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors overflow-hidden relative ${expense.receipt_photo_url ? 'cursor-pointer ring-2 ring-offset-2 ring-blue-100 transition-transform active:scale-90' : ''}`}
                     style={{ color: expense.category?.color_code }}
+                    onClick={(e) => {
+                      if (expense.receipt_photo_url) {
+                        e.stopPropagation();
+                        setSelectedImage(expense.receipt_photo_url);
+                      }
+                    }}
                   >
                     {expense.receipt_photo_url ? (
                       <img src={expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
@@ -315,6 +346,53 @@ export default function Dashboard() {
           </div>
         </section>
       </div>
+
+      {/* Image Modal for Receipts */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 cursor-pointer"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="absolute top-10 right-10 flex gap-4">
+              <motion.button 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownload(selectedImage);
+                }}
+                className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white transition-colors"
+              >
+                <Download className="w-6 h-6" />
+              </motion.button>
+              <motion.button 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImage(null);
+                }}
+                className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </motion.button>
+            </div>
+            <motion.img 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              src={selectedImage} 
+              alt="Receipt" 
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain"
+              onClick={(e) => e.stopPropagation()} 
+            />
+            <p className="absolute bottom-10 text-white/50 text-xs font-medium tracking-widest uppercase">Tap anywhere to close</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

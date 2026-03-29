@@ -46,7 +46,7 @@ export default function AddExpenseForm() {
     }
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: "splits"
   });
@@ -102,16 +102,26 @@ export default function AddExpenseForm() {
       }
     }
     fetchData();
-  }, [id, isEditing, setValue]);
+  }, [id, isEditing, setValue, reset]);
 
   const totalAmount = watch("amount");
 
   const splitEqually = () => {
-    if (!totalAmount || fields.length === 0) return;
-    const splitAmount = (Number(totalAmount) / fields.length).toFixed(2);
-    fields.forEach((_, index) => {
-      setValue(`splits.${index}.amount_owed`, splitAmount);
-    });
+    if (!totalAmount) return;
+    
+    if (fields.length === 0) {
+      if (people.length === 0) return;
+      const splitAmount = (Number(totalAmount) / people.length).toFixed(2);
+      replace(people.map(p => ({
+        person_id: p.id,
+        amount_owed: splitAmount
+      })));
+    } else {
+      const splitAmount = (Number(totalAmount) / fields.length).toFixed(2);
+      fields.forEach((_, index) => {
+        setValue(`splits.${index}.amount_owed`, splitAmount);
+      });
+    }
   };
 
   const onSubmit = async (data: FormData) => {

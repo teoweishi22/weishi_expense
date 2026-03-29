@@ -13,7 +13,9 @@ import {
   ShoppingBag, 
   Plane, 
   Tag,
-  Receipt
+  Receipt,
+  X,
+  Download
 } from 'lucide-react';
 
 export default function PersonDetail() {
@@ -24,6 +26,24 @@ export default function PersonDetail() {
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  const handleDownload = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `receipt-${new Date().getTime()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(blobUrl);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -311,8 +331,9 @@ export default function PersonDetail() {
                   <div key={split.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div 
-                        className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
+                        className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative ${split.expense?.receipt_photo_url ? 'cursor-pointer ring-2 ring-offset-2 ring-blue-100 transition-transform active:scale-90' : ''}`}
                         style={{ backgroundColor: `${categoryColor}20`, color: categoryColor }}
+                        onClick={() => split.expense?.receipt_photo_url && setSelectedImage(split.expense.receipt_photo_url)}
                       >
                         {split.expense?.receipt_photo_url ? (
                           <img src={split.expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
@@ -407,6 +428,53 @@ export default function PersonDetail() {
           </div>
         </div>
       )}
+
+      {/* Image Modal for Receipts */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 cursor-pointer"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="absolute top-10 right-10 flex gap-4">
+              <motion.button 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownload(selectedImage);
+                }}
+                className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white transition-colors"
+              >
+                <Download className="w-6 h-6" />
+              </motion.button>
+              <motion.button 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImage(null);
+                }}
+                className="bg-white/10 hover:bg-white/20 p-3 rounded-full text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </motion.button>
+            </div>
+            <motion.img 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              src={selectedImage} 
+              alt="Receipt" 
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain"
+              onClick={(e) => e.stopPropagation()} 
+            />
+            <p className="absolute bottom-10 text-white/50 text-xs font-medium tracking-widest uppercase">Tap anywhere to close</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
