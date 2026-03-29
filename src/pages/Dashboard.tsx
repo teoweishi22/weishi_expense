@@ -105,7 +105,7 @@ export default function Dashboard() {
 
   // 1. Add this logic above your return statement
   // Use a strict check for the limit
-  const monthlyLimit = (me && me.monthly_limit !== undefined && me.monthly_limit !== null) 
+  const monthlyLimit = (me && me.monthly_limit !== undefined && me.monthly_limit !== null && me.monthly_limit > 0) 
     ? Number(me.monthly_limit) 
     : 1000;
   const percentage = Math.min((totalExpenses / monthlyLimit) * 100, 100);

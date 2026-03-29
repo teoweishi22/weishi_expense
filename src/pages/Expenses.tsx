@@ -2,18 +2,19 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Expense, Category } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, Utensils, Plane, Monitor, HeartPulse, ReceiptText, ChevronRight, Trash2 } from 'lucide-react';
+import { Search, ReceiptText, X, ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Expenses() {
-  const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // NEW: State for the receipt modal
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -35,52 +36,12 @@ export default function Expenses() {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this expense?')) return;
-
-    try {
-      const expenseToDelete = expenses.find(exp => exp.id === id);
-
-      // Delete splits first to avoid foreign key constraint errors if ON DELETE CASCADE is not set
-      const { data: splitsData, error: splitsError } = await supabase.from('expense_splits').delete().eq('expense_id', id).select();
-      if (splitsError) throw splitsError;
-      
-      // We don't throw if splitsData is empty because an expense might not have splits, 
-      // but if it fails silently due to RLS, the next step (deleting the expense) will likely fail due to foreign key constraints or its own RLS.
-
-      // Perform hard delete and select the deleted row to verify it actually deleted
-      const { data, error } = await supabase.from('expenses').delete().eq('id', id).select();
-      
-      if (error) throw error;
-      
-      if (!data || data.length === 0) {
-        throw new Error("No rows were deleted. This is usually caused by missing DELETE permissions in your Supabase RLS policies. Please enable DELETE for this table.");
-      }
-
-      // Delete the receipt photo from storage if it exists
-      if (expenseToDelete?.receipt_photo_url) {
-        const urlParts = expenseToDelete.receipt_photo_url.split('/');
-        const fileName = urlParts[urlParts.length - 1];
-        if (fileName) {
-          await supabase.storage.from('receipts').remove([fileName]);
-        }
-      }
-
-      setExpenses(expenses.filter(exp => exp.id !== id));
-    } catch (error: any) {
-      console.error('Error deleting expense:', error);
-      alert(`Failed to delete expense: ${error.message || 'Unknown error'}`);
-    }
-  };
-
   const filteredExpenses = expenses.filter(exp => {
     const matchesSearch = exp.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = !selectedCategory || exp.category_id === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  // Grouping logic
   const groupedExpenses = filteredExpenses.reduce((groups, exp) => {
     const date = exp.expense_date;
     if (!groups[date]) groups[date] = [];
@@ -100,14 +61,14 @@ export default function Expenses() {
   if (loading) return <div className="p-8 text-center text-gray-500">Loading transactions...</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-32">
       {/* Hero Section */}
       <section className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
+        <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">
           {format(new Date(), 'MMMM')} Spending
         </p>
         <div className="flex items-baseline gap-2">
-          <h1 className="text-5xl font-extrabold tracking-tight text-gray-900">
+          <h1 className="text-5xl font-extrabold tracking-tight text-black">
             RM {totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </h1>
         </div>
@@ -124,7 +85,7 @@ export default function Expenses() {
             placeholder="Search transactions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-14 bg-white border-none rounded-2xl pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-black/5 transition-all text-gray-900 placeholder:text-gray-400"
+            className="w-full h-14 bg-white border-none rounded-2xl pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-black/5 transition-all text-black placeholder:text-gray-400"
           />
         </div>
 
@@ -132,76 +93,76 @@ export default function Expenses() {
           <button 
             onClick={() => setSelectedCategory(null)}
             className={cn(
-              "px-6 py-2.5 rounded-full font-semibold text-sm flex-shrink-0 transition-all",
-              !selectedCategory ? "bg-black text-white" : "bg-white text-gray-600 shadow-sm"
+              "px-6 py-2.5 rounded-full font-bold text-xs flex-shrink-0 transition-all",
+              !selectedCategory ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
             )}
           >
-            All
+            ALL
           </button>
           {categories.map(cat => (
             <button 
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
               className={cn(
-                "px-6 py-2.5 rounded-full font-semibold text-sm flex-shrink-0 transition-all",
-                selectedCategory === cat.id ? "bg-black text-white" : "bg-white text-gray-600 shadow-sm"
+                "px-6 py-2.5 rounded-full font-bold text-xs flex-shrink-0 transition-all",
+                selectedCategory === cat.id ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
               )}
             >
-              {cat.name}
+              {cat.name.toUpperCase()}
             </button>
           ))}
         </div>
       </section>
 
       {/* Grouped Transactions */}
-      <div className="space-y-8 pb-12">
+      <div className="space-y-8">
         {Object.keys(groupedExpenses).length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No transactions found.</div>
+          <div className="text-center py-12 text-gray-400 font-medium">No transactions found.</div>
         ) : (
           Object.entries(groupedExpenses).map(([date, items]) => (
             <section key={date} className="space-y-4">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">
+              <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1">
                 {formatDateHeader(date)}
               </h3>
               <div className="space-y-3">
                 {items.map(exp => (
                   <div 
                     key={exp.id} 
-                    onClick={() => navigate(`/edit/${exp.id}`)}
-                    className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-black/[0.03] active:scale-[0.98] transition-all cursor-pointer"
+                    className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-black/[0.03] active:scale-[0.98] transition-all"
                   >
                     <div className="flex items-center gap-4">
+                      {/* NEW: Clickable icon if receipt exists */}
                       <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white overflow-hidden relative"
+                        className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center text-white transition-transform active:scale-90",
+                          exp.receipt_photo_url ? "cursor-pointer ring-2 ring-offset-2 ring-blue-100" : "cursor-default"
+                        )}
                         style={{ backgroundColor: exp.category?.color_code || '#000' }}
+                        onClick={() => exp.receipt_photo_url && setSelectedImage(exp.receipt_photo_url)}
                       >
                         {exp.receipt_photo_url ? (
-                          <img src={exp.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                          <ImageIcon className="w-6 h-6 animate-pulse" />
                         ) : (
                           <ReceiptText className="w-6 h-6" />
                         )}
                       </div>
                       <div>
-                        <h4 className="font-bold text-gray-900">{exp.description}</h4>
-                        <p className="text-xs text-gray-500">{exp.category?.name || 'Uncategorized'}</p>
+                        <h4 className="font-bold text-black">{exp.description}</h4>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-400">{exp.category?.name || 'Uncategorized'}</p>
+                          {exp.receipt_photo_url && (
+                            <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-bold uppercase">Photo Attached</span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="font-extrabold text-gray-900">
-                          -RM {Number(exp.total_amount).toFixed(2)}
-                        </p>
-                        <p className="text-[10px] text-gray-400">
-                          {format(new Date(exp.created_at), 'hh:mm a')}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => handleDelete(e, exp.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                        aria-label="Delete expense"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                    <div className="text-right">
+                      <p className="font-extrabold text-black">
+                        -RM {Number(exp.total_amount).toFixed(2)}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {format(new Date(exp.created_at), 'hh:mm a')}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -210,6 +171,36 @@ export default function Expenses() {
           ))
         )}
       </div>
+
+      {/* NEW: Image Modal for Receipts */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 cursor-pointer"
+            onClick={() => setSelectedImage(null)}
+          >
+            <motion.button 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute top-10 right-10 bg-white/10 hover:bg-white/20 p-3 rounded-full text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </motion.button>
+            <motion.img 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              src={selectedImage} 
+              alt="Receipt" 
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain"
+              onClick={(e) => e.stopPropagation()} 
+            />
+            <p className="absolute bottom-10 text-white/50 text-xs font-medium tracking-widest uppercase">Tap anywhere to close</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

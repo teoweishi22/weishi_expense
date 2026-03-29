@@ -38,7 +38,7 @@ export default function Settings() {
         if (me) {
           // Check if the property exists in the DB, even if it is 0
           setMonthlyLimit(
-            me.monthly_limit !== undefined && me.monthly_limit !== null 
+            me.monthly_limit !== undefined && me.monthly_limit !== null && me.monthly_limit > 0
               ? me.monthly_limit.toString() 
               : '1000'
           );
