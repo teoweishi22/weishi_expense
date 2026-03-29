@@ -13,6 +13,8 @@ export default function Settings() {
   const [newCategory, setNewCategory] = useState({ name: '', color_code: '#3b82f6' });
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [newPerson, setNewPerson] = useState('');
+  const [monthlyLimit, setMonthlyLimit] = useState<string>('');
+  const [isSavingLimit, setIsSavingLimit] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -29,11 +31,50 @@ export default function Settings() {
 
       if (catsRes.data) setCategories(catsRes.data);
       if (pmRes.data) setPaymentMethods(pmRes.data);
-      if (peopleRes.data) setPeople(peopleRes.data);
+      if (peopleRes.data) {
+        setPeople(peopleRes.data);
+        const me = peopleRes.data.find(p => p.name === 'Me');
+        if (me && me.monthly_limit) {
+          setMonthlyLimit(me.monthly_limit.toString());
+        }
+      }
     } catch (error) {
       console.error('Error fetching settings data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveMonthlyLimit = async () => {
+    const me = people.find(p => p.name === 'Me');
+    if (!me) {
+      alert("Could not find a person named 'Me'. Please add one first.");
+      return;
+    }
+
+    const limitValue = parseFloat(monthlyLimit);
+    if (isNaN(limitValue) || limitValue < 0) {
+      alert("Please enter a valid positive number for the limit.");
+      return;
+    }
+
+    setIsSavingLimit(true);
+    try {
+      const { error } = await supabase
+        .from('people')
+        .update({ monthly_limit: limitValue })
+        .eq('id', me.id);
+
+      if (error) throw error;
+      
+      // Update local state
+      setPeople(people.map(p => p.id === me.id ? { ...p, monthly_limit: limitValue } : p));
+      alert("Monthly limit saved successfully!");
+    } catch (error: any) {
+      console.error('Error saving monthly limit:', error);
+      alert(`Failed to save limit: ${error.message}`);
+    } finally {
+      setIsSavingLimit(false);
     }
   };
 
@@ -129,6 +170,39 @@ export default function Settings() {
   return (
     <div className="space-y-8">
       <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
+
+      {/* Preferences Section */}
+      <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Preferences</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Monthly Spending Limit (RM)
+            </label>
+            <div className="flex space-x-2">
+              <input
+                type="number"
+                value={monthlyLimit}
+                onChange={(e) => setMonthlyLimit(e.target.value)}
+                placeholder="e.g. 1000"
+                className="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none"
+                min="0"
+                step="0.01"
+              />
+              <button 
+                onClick={saveMonthlyLimit}
+                disabled={isSavingLimit}
+                className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors font-medium"
+              >
+                {isSavingLimit ? 'Saving...' : 'Save Limit'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              This limit applies to the "Me" person and drives the progress bar on your dashboard.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* People Section */}
       <section className="bg-white p-6 rounded-xl shadow-sm border">

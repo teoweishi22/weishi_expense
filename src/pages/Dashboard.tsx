@@ -103,6 +103,17 @@ export default function Dashboard() {
     return <div className="flex justify-center items-center h-64">Loading...</div>;
   }
 
+  // 1. Add this logic above your return statement
+  const monthlyLimit = me?.monthly_limit || 1000; // Use fetched limit or default to RM 1000
+  const percentage = Math.min((totalExpenses / monthlyLimit) * 100, 100);
+
+  // Determine bar color based on percentage
+  const getBarColor = () => {
+    if (percentage >= 85) return 'bg-red-500';      // Red for high spending
+    if (percentage >= 50) return 'bg-yellow-400';   // Yellow for warning
+    return 'bg-tertiary-fixed';                    // Green (default theme color) for safe
+  };
+
   return (
     <>
       {/* TopAppBar */}
@@ -148,10 +159,24 @@ export default function Dashboard() {
             
             <div className="flex justify-between items-end">
               <div className="space-y-1">
-                <p className="font-label text-xs uppercase tracking-widest opacity-50">Spending Limit</p>
-                <div className="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full bg-tertiary-fixed w-3/4"></div>
+                <div className="flex justify-between items-center w-48">
+                  <p className="font-label text-[10px] uppercase tracking-widest opacity-50">Spending Limit</p>
+                  <p className="font-label text-[10px] font-bold opacity-80">
+                    {percentage.toFixed(0)}%
+                  </p>
                 </div>
+                
+                {/* The dynamic progress bar */}
+                <div className="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-500 ease-out ${getBarColor()}`}
+                    style={{ width: `${percentage}%` }}
+                  ></div>
+                </div>
+                
+                <p className="text-[10px] opacity-40">
+                  RM {(monthlyLimit - totalExpenses).toFixed(2)} remaining
+                </p>
               </div>
               <div className="text-right">
                 <span className="font-label text-sm font-semibold text-tertiary-fixed">+2.4% from last month</span>
