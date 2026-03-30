@@ -175,6 +175,17 @@ export default function AddExpenseForm() {
       let expenseId = id;
 
       if (isEditing) {
+        // First, check if the record actually exists to differentiate between "not found" and "permission denied"
+        const { data: existingRecord, error: checkError } = await supabase
+          .from('expenses')
+          .select('id')
+          .eq('id', id)
+          .single();
+          
+        if (checkError || !existingRecord) {
+          throw new Error(`The expense with ID ${id} was not found. It may have been deleted.`);
+        }
+
         const { data: updatedData, error: expenseError } = await supabase
           .from('expenses')
           .update(expensePayload)
@@ -187,7 +198,11 @@ export default function AddExpenseForm() {
         }
         
         if (!updatedData || updatedData.length === 0) {
-          throw new Error("Update failed. You might not have permission to edit this transaction, or it doesn't exist.");
+          // If the record exists but update returns 0 rows, it's almost certainly RLS
+          throw new Error(
+            "Update failed due to database security rules (RLS). \n\n" +
+            "To fix this, go to your Supabase Dashboard -> Database -> Policies and ensure you have an 'UPDATE' policy for the 'expenses' table that allows your user to modify this record."
+          );
         }
         
         // Verify that the database actually accepted the changes
