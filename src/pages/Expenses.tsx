@@ -2,23 +2,26 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Expense, Category, Person } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download, FileSpreadsheet } from 'lucide-react';
+import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download, FileSpreadsheet, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 
 export default function Expenses() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get('filter');
   const navigate = useNavigate();
+  const location = useLocation();
   
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [me, setMe] = useState<Person | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
@@ -29,13 +32,18 @@ export default function Expenses() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [location.key]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedPersonId, startDate, endDate, filterParam]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [expRes, catRes, peopleRes] = await Promise.all([
-        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*)').order('expense_date', { ascending: false }),
+        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*), payer:people!payer_id(*)').order('expense_date', { ascending: false }),
         supabase.from('categories').select('*').order('name'),
         supabase.from('people').select('*')
       ]);
@@ -56,7 +64,15 @@ export default function Expenses() {
 
   const filteredExpenses = expenses.filter(exp => {
     const matchesSearch = exp.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = !selectedCategory || exp.category_id === selectedCategory;
+    
+    // People filter: matches if the person is the payer OR involved in splits
+    const matchesPerson = !selectedPersonId || 
+      exp.payer_id === selectedPersonId || 
+      (exp.expense_splits || []).some(split => split.person_id === selectedPersonId);
+    
+    // Date range filter
+    const matchesStartDate = !startDate || exp.expense_date >= startDate;
+    const matchesEndDate = !endDate || exp.expense_date <= endDate;
     
     let matchesFilter = true;
     if (filterParam === 'claim_pending' && me) {
@@ -69,7 +85,7 @@ export default function Expenses() {
         (exp.expense_splits || []).some(split => split.person_id === me.id && !split.is_settled);
     }
 
-    return matchesSearch && matchesCategory && matchesFilter;
+    return matchesSearch && matchesPerson && matchesStartDate && matchesEndDate && matchesFilter;
   });
 
   const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
@@ -96,7 +112,7 @@ export default function Expenses() {
 
   const handleExport = () => {
     // Sort chronologically (oldest first) for the Excel export
-    const sortedExpenses = [...expenses].sort((a, b) => 
+    const sortedExpenses = [...filteredExpenses].sort((a, b) => 
       new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime()
     );
 
@@ -202,39 +218,70 @@ export default function Expenses() {
 
       {/* Search & Filter */}
       <section className="space-y-4">
-        <div className="relative group">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-gray-400">
-            <Search className="w-5 h-5" />
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative group flex-1">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-gray-400">
+              <Search className="w-5 h-5" />
+            </div>
+            <input 
+              type="text"
+              placeholder="Search transactions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-14 bg-white border-none rounded-2xl pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-black/5 transition-all text-black placeholder:text-gray-400"
+            />
           </div>
-          <input 
-            type="text"
-            placeholder="Search transactions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-14 bg-white border-none rounded-2xl pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-black/5 transition-all text-black placeholder:text-gray-400"
-          />
+          
+          <div className="flex gap-2 items-center bg-white p-2 rounded-2xl shadow-sm">
+            <div className="flex items-center gap-2 px-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="text-xs font-bold bg-transparent border-none focus:ring-0 p-0 w-28"
+              />
+            </div>
+            <span className="text-gray-300">|</span>
+            <div className="flex items-center gap-2 px-2">
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="text-xs font-bold bg-transparent border-none focus:ring-0 p-0 w-28"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="p-1 hover:bg-gray-100 rounded-full text-gray-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-3 overflow-x-auto no-scrollbar py-2 -mx-4 px-4">
           <button 
-            onClick={() => setSelectedCategory(null)}
+            onClick={() => setSelectedPersonId(null)}
             className={cn(
               "px-6 py-2.5 rounded-full font-bold text-xs flex-shrink-0 transition-all",
-              !selectedCategory ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
+              !selectedPersonId ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
             )}
           >
             ALL
           </button>
-          {categories.map(cat => (
+          {people.map(person => (
             <button 
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              key={person.id}
+              onClick={() => setSelectedPersonId(person.id)}
               className={cn(
                 "px-6 py-2.5 rounded-full font-bold text-xs flex-shrink-0 transition-all",
-                selectedCategory === cat.id ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
+                selectedPersonId === person.id ? "bg-black text-white" : "bg-white text-gray-500 shadow-sm"
               )}
             >
-              {cat.name.toUpperCase()}
+              {person.name.toUpperCase()}
             </button>
           ))}
         </div>
@@ -281,9 +328,11 @@ export default function Expenses() {
                       <div>
                         <h4 className="font-bold text-black">{exp.description}</h4>
                         <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-400">Paid by {exp.payer?.name || 'Unknown'}</p>
+                          <span className="text-gray-300">•</span>
                           <p className="text-xs text-gray-400">{exp.category?.name || 'Uncategorized'}</p>
                           {exp.receipt_photo_url && (
-                            <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-bold uppercase">Photo Attached</span>
+                            <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-bold uppercase ml-1">Photo Attached</span>
                           )}
                         </div>
                       </div>

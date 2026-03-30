@@ -61,8 +61,11 @@ export default function AddExpenseForm() {
       ]);
       
       const peopleList = peopleRes.data || [];
-      setCategories(catsRes.data || []);
-      setPaymentMethods(payRes.data || []);
+      const categoriesList = catsRes.data || [];
+      const paymentMethodsList = payRes.data || [];
+      
+      setCategories(categoriesList);
+      setPaymentMethods(paymentMethodsList);
       setPeople(peopleList);
 
       if (isEditing) {
@@ -80,18 +83,26 @@ export default function AddExpenseForm() {
             setIsSplitting(true);
           }
 
+          // Reset form with fetched data
           reset({
             description: expense.description,
             amount: expense.total_amount,
             date: expense.expense_date,
-            category_id: expense.category_id,
-            payment_method_id: expense.payment_method_id,
-            payer_id: expense.payer_id,
+            category_id: expense.category_id || '',
+            payment_method_id: expense.payment_method_id || '',
+            payer_id: expense.payer_id || '',
             splits: hasSplits ? expense.expense_splits.map((s: any) => ({
               person_id: s.person_id,
               amount_owed: s.amount_owed
             })) : []
           });
+          
+          // Use a small timeout to ensure the select options are rendered before setting values
+          setTimeout(() => {
+            if (expense.payer_id) setValue('payer_id', expense.payer_id);
+            if (expense.category_id) setValue('category_id', expense.category_id);
+            if (expense.payment_method_id) setValue('payment_method_id', expense.payment_method_id);
+          }, 100);
         }
       } else {
         // Default Payer to "Me" if found
@@ -152,21 +163,41 @@ export default function AddExpenseForm() {
         description: data.description,
         total_amount: data.amount,
         expense_date: data.date,
-        category_id: data.category_id,
-        payment_method_id: data.payment_method_id,
-        payer_id: data.payer_id,
+        category_id: data.category_id || null,
+        payment_method_id: data.payment_method_id || null,
+        payer_id: data.payer_id || null,
         ...(photoUrl ? { receipt_photo_url: photoUrl } : {})
       };
+
+      console.log("Submitting expense payload:", expensePayload);
+      console.log("Is Editing:", isEditing, "ID:", id);
 
       let expenseId = id;
 
       if (isEditing) {
-        const { error: expenseError } = await supabase
+        const { data: updatedData, error: expenseError } = await supabase
           .from('expenses')
           .update(expensePayload)
-          .eq('id', id);
+          .eq('id', id)
+          .select();
           
-        if (expenseError) throw expenseError;
+        if (expenseError) {
+          console.error("Supabase update error:", expenseError);
+          throw expenseError;
+        }
+        
+        if (!updatedData || updatedData.length === 0) {
+          throw new Error("Update failed. You might not have permission to edit this transaction, or it doesn't exist.");
+        }
+        
+        // Verify that the database actually accepted the changes
+        const updatedRow = updatedData[0];
+        if (expensePayload.payer_id && updatedRow.payer_id !== expensePayload.payer_id) {
+          console.warn("Database silently rejected payer_id update. Expected:", expensePayload.payer_id, "Got:", updatedRow.payer_id);
+          throw new Error("The database rejected the change to 'Who Paid?'. You may not have permission to change the payer of this expense.");
+        }
+        
+        console.log("Supabase update successful", updatedData);
       } else {
         // 2. Insert core Expense with payer_id
         const { data: expenseData, error: expenseError } = await supabase
@@ -215,7 +246,7 @@ export default function AddExpenseForm() {
 
       reset();
       setIsSplitting(false);
-      navigate(-1);
+      navigate('/expenses', { replace: true });
     } catch (error: any) {
       console.error("Error saving expense:", error);
       alert(`Failed to save expense: ${error.message}`);
