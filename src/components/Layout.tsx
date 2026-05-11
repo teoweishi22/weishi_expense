@@ -1,9 +1,15 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Home, PlusCircle, Users, Settings, ReceiptText } from 'lucide-react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Home, PlusCircle, Users, Settings, ReceiptText, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    localStorage.removeItem('isAuthenticated');
+    navigate('/login');
+  };
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: Home },
@@ -15,9 +21,16 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b sticky top-0 z-10">
+      <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">Expense Tracker</h1>
+          <button
+            onClick={handleLogout}
+            className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-900"
+          >
+            <LogOut className="w-5 h-5 mr-1" />
+            Sign Out
+          </button>
         </div>
       </header>
 
