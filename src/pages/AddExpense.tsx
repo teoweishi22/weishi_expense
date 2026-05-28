@@ -433,6 +433,15 @@ export default function AddExpenseForm() {
                         
                         {isIncluded && (
                           <div className="flex items-center space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (totalAmount) setValue(`splits.${fieldIndex}.amount_owed`, totalAmount);
+                              }}
+                              className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded hover:bg-slate-300"
+                            >
+                              FULL
+                            </button>
                             <span className="text-xs font-bold text-gray-300">RM</span>
                             <input 
                               type="number" 
