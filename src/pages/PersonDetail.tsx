@@ -54,6 +54,14 @@ export default function PersonDetail() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       // Fetch the person and "Me"
       const [personRes, meRes] = await Promise.all([
         supabase.from('people').select('*').eq('id', id).single(),
@@ -68,14 +76,20 @@ export default function PersonDetail() {
         // Fetch all unsettled splits involving either person
         const { data: splitsData } = await supabase
           .from('expense_splits')
-          .select('*, expense:expenses(*, category:categories(*))')
+          .select('*, expenses!inner(*, category:categories(*))')
           .in('person_id', [id, meData.id])
           .eq('is_settled', false)
+          .eq('expenses.user_id', userId)
           .order('created_at', { ascending: false });
 
         if (splitsData) {
+          const mappedSplits = splitsData.map((split: any) => ({
+            ...split,
+            expense: split.expenses
+          }));
+          
           // Filter to only include splits between "Me" and this person
-          const relevantSplits = splitsData.filter(s => 
+          const relevantSplits = mappedSplits.filter((s: any) => 
             (s.person_id === id && s.expense?.payer_id === meData.id) || 
             (s.person_id === meData.id && s.expense?.payer_id === id)
           );

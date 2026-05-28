@@ -42,8 +42,16 @@ export default function Expenses() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       const [expRes, catRes, peopleRes] = await Promise.all([
-        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*), payer:people!payer_id(*)').order('expense_date', { ascending: false }),
+        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*), payer:people!payer_id(*)').eq('user_id', userId).order('expense_date', { ascending: false }),
         supabase.from('categories').select('*').order('name'),
         supabase.from('people').select('*')
       ]);

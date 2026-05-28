@@ -4,6 +4,9 @@
  */
 
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { supabase } from './lib/supabase';
+import { Session } from '@supabase/supabase-js';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import AddExpense from './pages/AddExpense';
@@ -13,13 +16,34 @@ import SharedSettlement from './pages/SharedSettlement';
 import Expenses from './pages/Expenses';
 import PersonDetail from './pages/PersonDetail';
 import Login from './pages/Login';
+import Admin from './pages/Admin';
 
 // Helper component to protect routes
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const location = useLocation();
 
-  if (!isAuthenticated) {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!session) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
@@ -48,6 +72,7 @@ export default function App() {
           <Route path="settlements" element={<Settlements />} />
           <Route path="person/:id" element={<PersonDetail />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="admin" element={<Admin />} />
         </Route>
 
         {/* Public read-only route */}

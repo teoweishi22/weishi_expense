@@ -1,12 +1,24 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Home, PlusCircle, Users, Settings, ReceiptText, LogOut } from 'lucide-react';
+import { Home, PlusCircle, Users, Settings, ReceiptText, LogOut, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { useEffect, useState } from 'react';
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  const handleLogout = () => {
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.user_metadata?.role === 'admin') {
+        setIsAdmin(true);
+      }
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('isAuthenticated');
     navigate('/login');
   };
@@ -18,6 +30,10 @@ export default function Layout() {
     { name: 'Settlements', path: '/settlements', icon: Users },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
+
+  if (isAdmin) {
+    navItems.push({ name: 'Admin', path: '/admin', icon: ShieldAlert });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

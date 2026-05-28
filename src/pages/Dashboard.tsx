@@ -40,6 +40,14 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -52,12 +60,14 @@ export default function Dashboard() {
             category:categories(*),
             payment_method:payment_methods(*)
           `)
+          .eq('user_id', userId)
           .gte('expense_date', startOfMonth.toISOString().split('T')[0])
           .order('expense_date', { ascending: false }),
         supabase
           .from('expense_splits')
-          .select('*, person:people(*), expense:expenses(*)')
-          .eq('is_settled', false),
+          .select('*, person:people(*), expenses!inner(*)')
+          .eq('is_settled', false)
+          .eq('expenses.user_id', userId),
         supabase.from('people').select('*')
       ]);
 

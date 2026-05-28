@@ -31,16 +31,32 @@ export default function Settlements() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       const [splitsRes, peopleRes] = await Promise.all([
         supabase
           .from('expense_splits')
-          .select('*, person:people(*), expense:expenses(*)')
+          .select('*, person:people(*), expenses!inner(*)')
           .eq('is_settled', false)
+          .eq('expenses.user_id', userId)
           .order('created_at', { ascending: false }),
         supabase.from('people').select('*').order('name'),
       ]);
 
-      if (splitsRes.data) setSplits(splitsRes.data);
+      if (splitsRes.data) {
+        // Map the result back to the expected structure (expense: expenses instead of expenses: expenses)
+        const mappedSplits = splitsRes.data.map((split: any) => ({
+          ...split,
+          expense: split.expenses
+        }));
+        setSplits(mappedSplits);
+      }
       if (peopleRes.data) setPeople(peopleRes.data);
     } catch (error) {
       console.error('Error fetching settlements:', error);

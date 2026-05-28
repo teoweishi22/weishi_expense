@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -9,21 +10,31 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Hardcoded credentials logic
-    setTimeout(() => {
-      if (username === 'weishi' && password === 'Tws123456.') {
-        localStorage.setItem('isAuthenticated', 'true');
+    // Map username to a fake email domain so Supabase Auth can process it
+    const email = `${username}@app.local`.toLowerCase();
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      if (data.session) {
+        localStorage.setItem('isAuthenticated', 'true'); // Keeping this for backward compatibility if used elsewhere, but not safe
         navigate('/');
-      } else {
-        setError('Invalid username or password');
-        setIsLoading(false);
       }
-    }, 500); // Small delay to simulate loading
+    } catch (err: any) {
+      setError(err.message || 'Invalid username or password');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

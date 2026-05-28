@@ -54,6 +54,9 @@ export default function AddExpenseForm() {
   // Fetch dropdown data on mount
   useEffect(() => {
     async function fetchData() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       const [catsRes, payRes, peopleRes] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('payment_methods').select('*').order('name'),
@@ -68,11 +71,12 @@ export default function AddExpenseForm() {
       setPaymentMethods(paymentMethodsList);
       setPeople(peopleList);
 
-      if (isEditing) {
+      if (isEditing && userId) {
         const { data: expense, error } = await supabase
           .from('expenses')
           .select('*, expense_splits(*)')
           .eq('id', id)
+          .eq('user_id', userId)
           .single();
           
         if (expense) {
@@ -159,7 +163,10 @@ export default function AddExpenseForm() {
         }
       }
 
-      const expensePayload = {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      const expensePayload: any = {
         description: data.description,
         total_amount: data.amount,
         expense_date: data.date,
@@ -168,6 +175,10 @@ export default function AddExpenseForm() {
         payer_id: data.payer_id || null,
         ...(photoUrl ? { receipt_photo_url: photoUrl } : {})
       };
+
+      if (!isEditing && userId) {
+        expensePayload.user_id = userId;
+      }
 
       console.log("Submitting expense payload:", expensePayload);
       console.log("Is Editing:", isEditing, "ID:", id);
