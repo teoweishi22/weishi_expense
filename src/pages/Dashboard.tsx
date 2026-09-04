@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { Expense, ExpenseSplit, Person } from '@/types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { format } from 'date-fns';
-import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag, X, Download } from 'lucide-react';
+import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag, X, Download, CheckCircle2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { cn } from '@/lib/utils';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -85,7 +86,7 @@ export default function Dashboard() {
     }
   };
 
-  const totalExpenses = expenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
+  const totalExpenses = expenses.filter(exp => !exp.description.startsWith('[Settlement]')).reduce((sum, exp) => sum + Number(exp.total_amount), 0);
   
   // 1. Find the "Me" person (assuming your name is "Me" or you have a specific ID)
   const me = people.find(p => p.name.toLowerCase() === "me"); 
@@ -119,7 +120,7 @@ export default function Dashboard() {
     .filter(b => b.net > 0)
     .reduce((sum, b) => sum + b.net, 0);
 
-  const expensesByCategory = expenses.reduce((acc, exp) => {
+  const expensesByCategory = expenses.filter(exp => !exp.description.startsWith('[Settlement]')).reduce((acc, exp) => {
     const catName = exp.category?.name || 'Uncategorized';
     const amount = Number(exp.total_amount);
     if (!acc[catName]) {
@@ -320,44 +321,67 @@ export default function Dashboard() {
           </div>
           
           <div className="space-y-3">
-            {expenses.slice(0, 5).map((expense) => (
-              <div 
-                key={expense.id} 
-                onClick={() => navigate(`/edit/${expense.id}`)}
-                className="bg-surface-container-lowest rounded-lg p-5 flex items-center justify-between hover:translate-x-2 transition-transform duration-300 group cursor-pointer"
-              >
-                <div className="flex items-center gap-4">
-                  <div 
-                    className={`w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors overflow-hidden relative ${expense.receipt_photo_url ? 'cursor-pointer ring-2 ring-offset-2 ring-blue-100 transition-transform active:scale-90' : ''}`}
-                    style={{ color: expense.category?.color_code }}
-                    onClick={(e) => {
-                      if (expense.receipt_photo_url) {
-                        e.stopPropagation();
-                        setSelectedImage(expense.receipt_photo_url);
-                      }
-                    }}
-                  >
-                    {expense.receipt_photo_url ? (
-                      <img src={expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
-                    ) : (
-                      getCategoryIcon(expense.category?.name || '')
-                    )}
+            {expenses.slice(0, 5).map((expense) => {
+              const isSettlement = expense.description.startsWith('[Settlement]');
+              const cleanDescription = isSettlement ? expense.description.replace('[Settlement] ', '') : expense.description;
+              const isRepaymentReceived = isSettlement && expense.payer_id !== me?.id;
+
+              return (
+                <div 
+                  key={expense.id} 
+                  onClick={() => navigate(`/edit/${expense.id}`)}
+                  className={cn(
+                    "bg-surface-container-lowest rounded-lg p-5 flex items-center justify-between hover:translate-x-2 transition-transform duration-300 group cursor-pointer border border-black/[0.01]",
+                    isSettlement && "bg-emerald-50/10 border-l-4 border-emerald-500 rounded-l-none"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className={cn(
+                        "w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors overflow-hidden relative",
+                        expense.receipt_photo_url ? "ring-2 ring-offset-2 ring-blue-100" : "",
+                        isSettlement ? "bg-emerald-100 text-emerald-600" : ""
+                      )}
+                      style={isSettlement ? undefined : { color: expense.category?.color_code }}
+                      onClick={(e) => {
+                        if (expense.receipt_photo_url) {
+                          e.stopPropagation();
+                          setSelectedImage(expense.receipt_photo_url);
+                        }
+                      }}
+                    >
+                      {expense.receipt_photo_url ? (
+                        <img src={expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                      ) : isSettlement ? (
+                        <CheckCircle2 className="w-6 h-6" />
+                      ) : (
+                        getCategoryIcon(expense.category?.name || '')
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-black">{cleanDescription}</p>
+                      <span className={cn(
+                        "inline-block px-2 py-0.5 mt-1 rounded text-[10px] font-bold uppercase tracking-wider",
+                        isSettlement ? "bg-emerald-100 text-emerald-800" : "bg-surface-container-high text-secondary"
+                      )}>
+                        {isSettlement ? 'Settlement' : (expense.category?.name || 'Uncategorized')}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-black">{expense.description}</p>
-                    <span className="inline-block px-2 py-0.5 mt-1 bg-surface-container-high rounded text-[10px] font-bold uppercase tracking-wider text-secondary">
-                      {expense.category?.name || 'Uncategorized'}
-                    </span>
+                  <div className="text-right">
+                    <p className={cn(
+                      "font-extrabold text-black",
+                      isRepaymentReceived && "text-emerald-600 font-black"
+                    )}>
+                      {isRepaymentReceived ? '+' : '-'}RM {Number(expense.total_amount).toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-secondary font-medium">
+                      {format(new Date(expense.expense_date), 'MMM d, yyyy')}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-extrabold text-black">-RM {Number(expense.total_amount).toFixed(2)}</p>
-                  <p className="text-[10px] text-secondary font-medium">
-                    {format(new Date(expense.expense_date), 'MMM d, yyyy')}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             
             {expenses.length === 0 && (
               <div className="text-center py-8 text-secondary font-medium">

@@ -67,12 +67,44 @@ export default function Settlements() {
 
   const markAsSettled = async (splitId: string) => {
     try {
+      const split = splits.find(s => s.id === splitId);
+      if (!split) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       const { error } = await supabase
         .from('expense_splits')
         .update({ is_settled: true })
         .eq('id', splitId);
 
       if (error) throw error;
+
+      // Create a settlement record in the expenses table so it shows up in history
+      if (userId) {
+        const originalPayerIsMe = split.expense?.payer_id === me?.id;
+        let description = '';
+        let payerId = '';
+
+        if (originalPayerIsMe) {
+          description = `[Settlement] ${split.person?.name || 'Someone'} paid back for ${split.expense?.description || 'Expense'}`;
+          payerId = split.person_id;
+        } else {
+          description = `[Settlement] Me paid back to ${split.person?.name || 'Someone'} for ${split.expense?.description || 'Expense'}`;
+          payerId = me?.id || '';
+        }
+
+        await supabase.from('expenses').insert([{
+          description,
+          total_amount: Number(split.amount_owed),
+          expense_date: new Date().toISOString().split('T')[0],
+          category_id: split.expense?.category_id || null,
+          payment_method_id: split.expense?.payment_method_id || null,
+          payer_id: payerId || null,
+          user_id: userId
+        }]);
+      }
+
       setSplits(splits.filter(s => s.id !== splitId));
     } catch (error) {
       console.error('Error marking as settled:', error);
@@ -163,7 +195,7 @@ export default function Settlements() {
           </div>
         ) : (
           balancesByPerson.map(({ person, splits: personSplits, totalOwed }, index) => {
-            // Make the first card larger (col-span-8) for a "Bento" look
+            // Keep the visual hierarchy layout
             const isLarge = index === 0;
             
             return (
@@ -174,23 +206,20 @@ export default function Settlements() {
                   isLarge ? "md:col-span-8" : "md:col-span-4"
                 )}
               >
-                <div className={cn(
-                  "flex justify-between gap-6 mb-8",
-                  isLarge ? "flex-col md:flex-row md:items-center" : "flex-col items-center text-center"
-                )}>
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-gray-400">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-xl font-bold text-gray-400 shrink-0">
                       {person.name.charAt(0)}
                     </div>
-                    <div className={isLarge ? "text-left" : "text-center"}>
-                      <h3 className="font-headline font-extrabold text-2xl tracking-tight">{person.name}</h3>
-                      <p className="text-gray-400 text-xs">Sister / Family</p>
+                    <div className="text-left min-w-0">
+                      <h3 className="font-headline font-extrabold text-lg sm:text-xl tracking-tight truncate max-w-[120px] sm:max-w-none">{person.name}</h3>
+                      <p className="text-gray-400 text-[10px] sm:text-xs">Sister / Family</p>
                     </div>
                   </div>
                   
-                  <div className={isLarge ? "text-right" : "text-center"}>
+                  <div className="text-left sm:text-right w-full sm:w-auto shrink-0 flex sm:flex-col justify-between sm:justify-start items-center sm:items-end gap-2 sm:gap-0 mt-2 sm:mt-0">
                     <span className={cn(
-                      "block font-headline font-extrabold text-3xl",
+                      "block font-headline font-extrabold text-2xl sm:text-3xl",
                       totalOwed > 0 ? "text-green-600" : "text-red-600"
                     )}>
                       {totalOwed > 0 ? '+' : '-'}RM {Math.abs(totalOwed).toFixed(2)}
@@ -198,55 +227,57 @@ export default function Settlements() {
                     {totalOwed > 0 && (
                       <button 
                         onClick={() => sendWhatsAppReminder(person, totalOwed)}
-                        className="mt-4 px-6 py-2 bg-black text-white rounded-full font-bold text-xs hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 mx-auto md:ml-auto"
+                        className="px-4 py-1.5 bg-black text-white rounded-full font-bold text-[10px] hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5"
                       >
-                        <MessageCircle className="w-4 h-4" />
+                        <MessageCircle className="w-3.5 h-3.5" />
                         Remind
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Individual Transactions (Only show in large cards) */}
-                {isLarge && (
-                  <div className="space-y-3">
-                    {personSplits.slice(0, 3).map(split => (
-                      <div key={split.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group hover:bg-slate-100 transition-colors">
-                        <div className="flex items-center gap-4">
-                          {split.expense?.receipt_photo_url ? (
-                            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
-                              <img src={split.expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover" />
-                            </div>
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                              <ReceiptText className="text-gray-400 w-5 h-5" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-bold text-sm text-gray-900">{split.expense?.description}</p>
-                            <p className="text-[10px] text-gray-400">
-                              {split.expense?.expense_date && format(new Date(split.expense.expense_date), 'MMM d, yyyy')}
-                            </p>
+                {/* Individual Transactions (Shown on all cards for maximum transparency) */}
+                <div className="space-y-3 mt-4">
+                  {personSplits.slice(0, 5).map(split => (
+                    <div key={split.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl group hover:bg-slate-100 transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {split.expense?.receipt_photo_url ? (
+                          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0">
+                            <img src={split.expense.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <span className={cn(
-                            "font-bold",
-                            split.expense?.payer_id === me?.id ? "text-green-600" : "text-red-600"
-                          )}>
-                            {split.expense?.payer_id === me?.id ? '+' : '-'}RM {Number(split.amount_owed).toFixed(2)}
-                          </span>
-                          <button 
-                            onClick={() => markAsSettled(split.id)}
-                            className="p-2 bg-white rounded-full text-blue-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                          </button>
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                            <ReceiptText className="text-gray-400 w-4.5 h-4.5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs sm:text-sm text-gray-900 truncate max-w-[100px] sm:max-w-[140px] md:max-w-[180px]">{split.expense?.description}</p>
+                          <p className="text-[9px] sm:text-[10px] text-gray-400">
+                            {split.expense?.expense_date && format(new Date(split.expense.expense_date), 'MMM d, yyyy')}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={cn(
+                          "font-bold text-xs sm:text-sm",
+                          split.expense?.payer_id === me?.id ? "text-green-600" : "text-red-600"
+                        )}>
+                          {split.expense?.payer_id === me?.id ? '+' : '-'}RM {Number(split.amount_owed).toFixed(2)}
+                        </span>
+                        <button 
+                          onClick={() => markAsSettled(split.id)}
+                          className="p-1.5 bg-white rounded-full text-blue-600 shadow-sm hover:scale-105 active:scale-95 transition-transform"
+                          title="Mark as Settled"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {personSplits.length === 0 && (
+                    <p className="text-center text-xs text-gray-400 py-2">No active splits</p>
+                  )}
+                </div>
               </section>
             );
           })

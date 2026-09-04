@@ -169,6 +169,9 @@ export default function PersonDetail() {
 
     setIsSubmitting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       const currentOwed = Number(selectedSplit.amount_owed);
       const remainingAmount = currentOwed - amountToPay;
       
@@ -183,6 +186,31 @@ export default function PersonDetail() {
         .eq('id', selectedSplit.id);
 
       if (error) throw error;
+
+      // Create settlement record in expenses table
+      if (userId && person) {
+        const originalPayerIsMe = selectedSplit.expense?.payer_id === me?.id;
+        let description = '';
+        let payerId = '';
+
+        if (originalPayerIsMe) {
+          description = `[Settlement] ${person.name} paid back for ${selectedSplit.expense?.description || 'Expense'}`;
+          payerId = person.id;
+        } else {
+          description = `[Settlement] Me paid back to ${person.name} for ${selectedSplit.expense?.description || 'Expense'}`;
+          payerId = me?.id || '';
+        }
+
+        await supabase.from('expenses').insert([{
+          description,
+          total_amount: amountToPay,
+          expense_date: new Date().toISOString().split('T')[0],
+          category_id: selectedSplit.expense?.category_id || null,
+          payment_method_id: selectedSplit.expense?.payment_method_id || null,
+          payer_id: payerId || null,
+          user_id: userId
+        }]);
+      }
       
       // Optimistic update
       if (isSettled) {
@@ -208,6 +236,9 @@ export default function PersonDetail() {
     if (splits.length === 0) return;
     setIsSubmitting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       const splitIds = splits.map(s => s.id);
       const { error } = await supabase
         .from('expense_splits')
@@ -215,6 +246,38 @@ export default function PersonDetail() {
         .in('id', splitIds);
 
       if (error) throw error;
+
+      // Create settlement records for all splits being settled
+      if (userId && person) {
+        const insertPayloads = splits.map(s => {
+          const originalPayerIsMe = s.expense?.payer_id === me?.id;
+          let description = '';
+          let payerId = '';
+
+          if (originalPayerIsMe) {
+            description = `[Settlement] ${person.name} paid back for ${s.expense?.description || 'Expense'}`;
+            payerId = person.id;
+          } else {
+            description = `[Settlement] Me paid back to ${person.name} for ${s.expense?.description || 'Expense'}`;
+            payerId = me?.id || '';
+          }
+
+          return {
+            description,
+            total_amount: Number(s.amount_owed),
+            expense_date: new Date().toISOString().split('T')[0],
+            category_id: s.expense?.category_id || null,
+            payment_method_id: s.expense?.payment_method_id || null,
+            payer_id: payerId || null,
+            user_id: userId
+          };
+        });
+
+        if (insertPayloads.length > 0) {
+          await supabase.from('expenses').insert(insertPayloads);
+        }
+      }
+
       setSplits([]);
     } catch (error) {
       console.error('Error settling all:', error);

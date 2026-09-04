@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Expense, Category, Person } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download, FileSpreadsheet, Calendar } from 'lucide-react';
+import { Search, ReceiptText, X, ImageIcon, FilterX, Trash2, Pencil, Download, FileSpreadsheet, Calendar, CheckCircle2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -116,7 +116,7 @@ export default function Expenses() {
     return format(date, 'MMMM d');
   };
 
-  const totalSpent = filteredExpenses.reduce((sum, exp) => sum + Number(exp.total_amount), 0);
+  const totalSpent = filteredExpenses.filter(exp => !exp.description.startsWith('[Settlement]')).reduce((sum, exp) => sum + Number(exp.total_amount), 0);
 
   const handleExport = () => {
     // Sort chronologically (oldest first) for the Excel export
@@ -306,66 +306,85 @@ export default function Expenses() {
                 {formatDateHeader(date)}
               </h3>
               <div className="space-y-3">
-                {items.map(exp => (
-                  <div 
-                    key={exp.id} 
-                    className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-black/[0.03] active:scale-[0.98] transition-all"
-                  >
+                {items.map(exp => {
+                  const isSettlement = exp.description.startsWith('[Settlement]');
+                  const cleanDescription = isSettlement ? exp.description.replace('[Settlement] ', '') : exp.description;
+                  const isRepaymentReceived = isSettlement && exp.payer_id !== me?.id;
+
+                  return (
                     <div 
-                      className="flex items-center gap-4 cursor-pointer flex-1"
-                      onClick={() => navigate(`/edit/${exp.id}`)}
+                      key={exp.id} 
+                      className={cn(
+                        "flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-black/[0.03] active:scale-[0.98] transition-all",
+                        isSettlement && "bg-emerald-50/20 border-emerald-500/10"
+                      )}
                     >
-                      {/* NEW: Clickable icon if receipt exists */}
                       <div 
-                        className={cn(
-                          "w-12 h-12 rounded-full flex items-center justify-center text-white transition-transform active:scale-90 overflow-hidden relative shrink-0",
-                          exp.receipt_photo_url ? "ring-2 ring-offset-2 ring-blue-100" : "cursor-default"
-                        )}
-                        style={{ backgroundColor: exp.category?.color_code || '#000' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (exp.receipt_photo_url) setSelectedImage(exp.receipt_photo_url);
-                        }}
+                        className="flex items-center gap-4 cursor-pointer flex-1"
+                        onClick={() => navigate(`/edit/${exp.id}`)}
                       >
-                        {exp.receipt_photo_url ? (
-                          <img src={exp.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
-                        ) : (
-                          <ReceiptText className="w-6 h-6" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-black">{exp.description}</h4>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs text-gray-400">Paid by {exp.payer?.name || 'Unknown'}</p>
-                          <span className="text-gray-300">•</span>
-                          <p className="text-xs text-gray-400">{exp.category?.name || 'Uncategorized'}</p>
-                          {exp.receipt_photo_url && (
-                            <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-bold uppercase ml-1">Photo Attached</span>
+                        {/* Clickable icon if receipt exists */}
+                        <div 
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center text-white transition-transform active:scale-90 overflow-hidden relative shrink-0",
+                            exp.receipt_photo_url ? "ring-2 ring-offset-2 ring-blue-100" : "",
+                            isSettlement ? "bg-emerald-100 text-emerald-600 cursor-default" : ""
                           )}
+                          style={isSettlement ? undefined : { backgroundColor: exp.category?.color_code || '#000' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (exp.receipt_photo_url) setSelectedImage(exp.receipt_photo_url);
+                          }}
+                        >
+                          {exp.receipt_photo_url ? (
+                            <img src={exp.receipt_photo_url} alt="Receipt" className="w-full h-full object-cover absolute inset-0" />
+                          ) : isSettlement ? (
+                            <CheckCircle2 className="w-6 h-6" />
+                          ) : (
+                            <ReceiptText className="w-6 h-6" />
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-black">{cleanDescription}</h4>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-gray-400">
+                              {isSettlement ? "Repayment" : `Paid by ${exp.payer?.name || 'Unknown'}`}
+                            </p>
+                            <span className="text-gray-300">•</span>
+                            <p className="text-xs text-gray-400">
+                              {isSettlement ? "Settlement" : (exp.category?.name || 'Uncategorized')}
+                            </p>
+                            {exp.receipt_photo_url && (
+                              <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-bold uppercase ml-1">Photo Attached</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col items-end justify-between h-full gap-2">
+                        <p className={cn(
+                          "font-extrabold text-black",
+                          isRepaymentReceived && "text-emerald-600 font-black"
+                        )}>
+                          {isRepaymentReceived ? '+' : '-'}RM {Number(exp.total_amount).toFixed(2)}
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <p className="text-[10px] text-gray-400">
+                            {format(new Date(exp.created_at), 'hh:mm a')}
+                          </p>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmId(exp.id);
+                            }}
+                            className="text-gray-300 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     </div>
-                    <div className="text-right flex flex-col items-end justify-between h-full gap-2">
-                      <p className="font-extrabold text-black">
-                        -RM {Number(exp.total_amount).toFixed(2)}
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <p className="text-[10px] text-gray-400">
-                          {format(new Date(exp.created_at), 'hh:mm a')}
-                        </p>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmId(exp.id);
-                          }}
-                          className="text-gray-300 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))
