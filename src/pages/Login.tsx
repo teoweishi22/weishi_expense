@@ -15,8 +15,10 @@ export default function Login() {
     setError('');
     setIsLoading(true);
 
-    // Map username to a fake email domain so Supabase Auth can process it
-    const email = `${username}@app.local`.toLowerCase();
+    // If user enters a full email address (contains @), use it directly.
+    // Otherwise, fallback to legacy username mapping for backward compatibility.
+    const inputVal = username.trim().toLowerCase();
+    const email = inputVal.includes('@') ? inputVal : `${inputVal}@app.local`;
 
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -49,7 +51,7 @@ export default function Login() {
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Username
+                Email / Username
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -60,7 +62,7 @@ export default function Login() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter username"
+                  placeholder="Enter email or username"
                   required
                 />
               </div>
