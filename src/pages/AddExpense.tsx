@@ -659,7 +659,7 @@ export default function AddExpenseForm() {
                   <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
                   Reading your receipt...
                 </h3>
-                <p className="text-sm text-gray-500 max-w-xs mx-auto">Gemini AI is analyzing layout, merchant details, dates, items, tax, and extracting payment totals...</p>
+                <p className="text-sm text-gray-500 max-w-xs mx-auto">OpenAI is analyzing layout, merchant details, dates, items, tax, and extracting payment totals...</p>
               </div>
             </div>
           ) : scanError ? (
