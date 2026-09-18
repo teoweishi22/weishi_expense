@@ -1,4 +1,45 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from 'openai';
+import convertHeic from 'heic-convert';
+
+const receiptSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    merchant: { type: 'string', description: 'Recognized clean merchant or store name. Empty if unreadable.' },
+    merchant_raw: { type: 'string', description: 'Raw text of merchant from header. Empty if unreadable.' },
+    date: { type: 'string', description: 'Transaction date formatted as YYYY-MM-DD or empty string.' },
+    amount: { type: 'number', description: 'Final total amount paid as a number. Zero if unreadable.' },
+    currency: { type: 'string', description: 'ISO currency code, default MYR.' },
+    category: { type: 'string', description: 'Best matching category name.' },
+    is_unreadable: { type: 'boolean', description: 'True only if there is no recognizable financial or receipt data.' },
+    confidence: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        merchant: { type: 'number', minimum: 0, maximum: 1 },
+        date: { type: 'number', minimum: 0, maximum: 1 },
+        amount: { type: 'number', minimum: 0, maximum: 1 },
+        category: { type: 'number', minimum: 0, maximum: 1 },
+      },
+      required: ['merchant', 'date', 'amount', 'category'],
+    },
+  },
+  required: ['merchant', 'merchant_raw', 'date', 'amount', 'currency', 'category', 'is_unreadable', 'confidence'],
+};
+
+// Guard the existing frontend contract, including when a configurable model returns bad output.
+function isReceiptData(value: any): boolean {
+  return value !== null && typeof value === 'object'
+    && ['merchant', 'merchant_raw', 'date', 'currency', 'category'].every(key => typeof value[key] === 'string')
+    && (value.date === '' || /^\d{4}-\d{2}-\d{2}$/.test(value.date))
+    && typeof value.amount === 'number' && Number.isFinite(value.amount)
+    && typeof value.is_unreadable === 'boolean'
+    && value.confidence !== null && typeof value.confidence === 'object'
+    && ['merchant', 'date', 'amount', 'category'].every(key =>
+      typeof value.confidence[key] === 'number'
+      && Number.isFinite(value.confidence[key])
+      && value.confidence[key] >= 0 && value.confidence[key] <= 1);
+}
 
 export const config = {
   api: {
@@ -29,26 +70,36 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { fileBase64, mimeType, existingCategories } = req.body || {};
-
-    if (!fileBase64 || !mimeType) {
-      return res.status(400).json({ error: "Missing receipt file data or mimeType" });
+    if (typeof fileBase64 !== 'string' || !fileBase64 || typeof mimeType !== 'string' || !mimeType) {
+      return res.status(400).json({ error: 'Missing receipt file data or mimeType' });
+    }
+    // Avoid repeated regex groups: normal multi-MB PDFs can exhaust the regex stack.
+    if (fileBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(fileBase64)) {
+      return res.status(400).json({ error: 'Receipt file data must be valid base64.' });
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf'].includes(mimeType)) {
+      return res.status(400).json({ error: 'Please upload a JPEG, PNG, WebP, GIF, HEIC, HEIF, or PDF receipt.' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {
-      return res.status(500).json({ 
-        error: "GEMINI_API_KEY is not configured in Vercel Environment Variables. Please add GEMINI_API_KEY in your Vercel Project Settings > Environment Variables." 
-      });
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server.' });
     }
 
-    const ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
+    let imageData = fileBase64;
+    let imageMime = mimeType;
+    if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+      try {
+        const jpeg = await convertHeic({ buffer: Buffer.from(fileBase64, 'base64'), format: 'JPEG', quality: 0.95 });
+        imageData = Buffer.from(jpeg).toString('base64');
+        imageMime = 'image/jpeg';
+      } catch {
+        return res.status(400).json({ error: 'This HEIC/HEIF photo could not be read. Please try exporting it as JPEG.' });
       }
-    });
+    }
+
+    // Keep the request within the existing API duration, without automatic duplicate attempts.
+    const ai = new OpenAI({ apiKey, timeout: 45_000, maxRetries: 0 });
 
     const categoriesString = existingCategories && Array.isArray(existingCategories) && existingCategories.length > 0
       ? existingCategories.join(", ")
@@ -75,58 +126,55 @@ RECEIPT & SLIP PARSING GUIDELINES:
 7. **Confidence Ratings**: Provide numbers between 0.0 and 1.0 representing your confidence for merchant, date, amount, and category.
 8. **Unreadable Fallback**: Only set is_unreadable: true if the image contains ZERO recognizable text, is completely pitch black/white, or has no financial/receipt data whatsoever. If amount or items are visible, set is_unreadable: false and output whatever can be extracted.`;
 
-    const filePart = {
-      inlineData: {
-        mimeType: mimeType,
-        data: fileBase64
-      }
-    };
+    const filePart = mimeType === 'application/pdf'
+      ? { type: 'input_file' as const, filename: 'receipt.pdf', file_data: `data:application/pdf;base64,${fileBase64}` }
+      : { type: 'input_image' as const, image_url: `data:${imageMime};base64,${imageData}`, detail: 'high' as const };
 
-    const promptPart = {
-      text: "Analyze this receipt image/document thoroughly. Extract the merchant, total amount paid, transaction date, and best category. Return valid JSON matching the schema."
-    };
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: [filePart, promptPart],
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            merchant: { type: Type.STRING, description: "Recognized clean merchant or store name." },
-            merchant_raw: { type: Type.STRING, description: "Raw text of merchant from header." },
-            date: { type: Type.STRING, description: "Transaction date formatted as YYYY-MM-DD or empty string." },
-            amount: { type: Type.NUMBER, description: "Final total amount paid as a number." },
-            currency: { type: Type.STRING, description: "ISO Currency code, default MYR." },
-            category: { type: Type.STRING, description: "Best matching category name." },
-            is_unreadable: { type: Type.BOOLEAN, description: "True only if image has no readable receipt text at all." },
-            confidence: {
-              type: Type.OBJECT,
-              properties: {
-                merchant: { type: Type.NUMBER },
-                date: { type: Type.NUMBER },
-                amount: { type: Type.NUMBER },
-                category: { type: Type.NUMBER }
-              },
-              required: ["merchant", "date", "amount", "category"]
-            }
-          },
-          required: ["merchant", "merchant_raw", "date", "amount", "currency", "category", "confidence"]
-        }
-      }
+    const response = await ai.responses.create({
+      model: process.env.OPENAI_MODEL?.trim() || 'gpt-5.6-luna',
+      reasoning: { effort: 'low' },
+      store: false,
+      instructions: systemInstruction,
+      input: [{
+        role: 'user',
+        content: [filePart, {
+          type: 'input_text',
+          text: 'Analyze this receipt image/document thoroughly. Extract the merchant, total amount paid, transaction date, and best category. Return valid JSON matching the schema.',
+        }],
+      }],
+      text: { format: { type: 'json_schema', name: 'receipt', strict: true, schema: receiptSchema } },
     });
 
-    const resultText = response.text;
-    if (!resultText) {
-      throw new Error("No response returned from Gemini API.");
+    if (response.status !== 'completed') {
+      return res.status(500).json({ error: 'OpenAI could not complete the receipt scan. Please try again.' });
+    }
+    const refused = response.output.some(item => item.type === 'message'
+      && item.content.some(part => part.type === 'refusal'));
+    if (refused) {
+      return res.status(500).json({ error: 'OpenAI could not process this receipt. Please try a different photo.' });
+    }
+    if (!response.output_text) {
+      return res.status(500).json({ error: 'No receipt data returned from OpenAI. Please try again.' });
     }
 
-    const parsedData = JSON.parse(resultText);
+    let parsedData: unknown;
+    try {
+      parsedData = JSON.parse(response.output_text);
+    } catch {
+      return res.status(500).json({ error: 'OpenAI returned invalid receipt data. Please try again.' });
+    }
+    if (!isReceiptData(parsedData)) {
+      return res.status(500).json({ error: 'OpenAI returned incomplete or invalid receipt fields. Please try again.' });
+    }
     return res.status(200).json(parsedData);
-  } catch (err: any) {
-    console.error("Error in Vercel scan-receipt API:", err);
-    return res.status(500).json({ error: err.message || "Failed to scan receipt" });
+  } catch (err: unknown) {
+    // Do not log uploaded receipts, provider response bodies, or credentials.
+    console.error('Error in scan-receipt API:', err instanceof Error ? err.name : 'Unknown error');
+    const error = err instanceof OpenAI.APIConnectionTimeoutError
+      ? 'Receipt scanning timed out. Please try again.'
+      : err instanceof OpenAI.APIError && err.status === 429
+        ? 'Receipt scanning is busy or the API limit was reached. Please try again later.'
+        : 'Failed to scan receipt with OpenAI. Please try again.';
+    return res.status(500).json({ error });
   }
 }
