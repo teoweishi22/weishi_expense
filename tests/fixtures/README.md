@@ -1,0 +1,1 @@
+`sample.heic` is a synthetic 256 × 256 solid-color image created locally for this migration's HEIC/HEIF conversion tests. It contains no real receipt or personal data. The tests decode the actual file and verify that the request sent to OpenAI contains JPEG bytes.
