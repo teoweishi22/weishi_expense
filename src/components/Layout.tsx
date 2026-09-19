@@ -11,7 +11,7 @@ export default function Layout() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.user_metadata?.role === 'admin') {
+      if (user?.app_metadata?.role === 'admin') {
         setIsAdmin(true);
       }
     });
