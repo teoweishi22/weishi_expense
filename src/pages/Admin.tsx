@@ -15,7 +15,7 @@ export default function Admin() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.user_metadata?.role === 'admin') {
+      if (user?.app_metadata?.role === 'admin') {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
@@ -48,14 +48,16 @@ export default function Admin() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          email: `${username}@app.local`.toLowerCase(),
+          email: `${username.trim()}@app.local`.toLowerCase(),
           password,
           displayName,
           role
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error('User creation is temporarily unavailable. Please refresh and try again.');
+      });
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to create user');
