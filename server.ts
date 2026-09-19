@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import createUserHandler from "./api/admin/create-user.ts";
 import scanReceiptHandler from "./api/scan-receipt.ts";
 
 dotenv.config({ path: [".env.local", ".env"] });
@@ -19,6 +20,8 @@ async function startServer() {
 
   // Use the same OpenAI scanner locally and in the existing API entry point.
   app.post("/api/scan-receipt", scanReceiptHandler);
+
+  app.post("/api/admin/create-user", createUserHandler);
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {

@@ -43,7 +43,7 @@ Tests cover the real API handler and OpenAI SDK with a mocked external response,
 
 The existing Vercel project must have `OPENAI_API_KEY`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY` set for Production. Keep the existing Supabase values. Deploy through the connected `teoweishi22/weishi_expense` repository; no Supabase migration is required.
 
-The original export also references `/api/admin/create-user` without supplying that endpoint. That pre-existing gap is outside this provider migration and is preserved.
+The admin form now uses `POST /api/admin/create-user` to create confirmed internal username accounts. It requires the existing server-only `SUPABASE_SERVICE_ROLE_KEY` and verifies the signed-in user through Supabase Auth. Admin authority comes only from `app_metadata.role`, never user-editable `user_metadata`. Use your email account with its existing trusted admin role; legacy accounts with only a user-metadata role do not receive admin access. New users can sign in with the username and password assigned in the form.
 
 ## References
 
