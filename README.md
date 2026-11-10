@@ -51,3 +51,14 @@ The admin form now uses `POST /api/admin/create-user` to create confirmed intern
 - [OpenAI image inputs](https://developers.openai.com/api/docs/guides/images-vision)
 - [OpenAI PDF inputs](https://developers.openai.com/api/docs/guides/file-inputs)
 - [GPT-5.6 Luna model capabilities](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+
+
+## Partial repayments
+
+Apply `supabase/migrations/20261110063339_partial_repayments.sql` to the existing Supabase project before releasing this feature. It adds paid amounts, an owner-scoped allocation ledger, and the authenticated `record_repayment` transaction; it does not change the connection.
+
+Use **Settlement → Record Repayment** for money already returned. The payment is allocated to the oldest unpaid shares, recorded in History, and excluded from spending. Original share amounts remain unchanged. Same-ID retries are idempotent. Recorded repayments and allocated bills are protected from direct editing/deletion to preserve the ledger. The per-share check button uses the same transaction.
+
+History shows whole-bill totals separately from the selected person's all-date outstanding balance. Shared links include the owning ledger and net both directions.
+
+`tests/repayments.database.sql` is an integration fixture: run it only inside a transaction with an authenticated test owner and always roll it back. It tests partial/full/outgoing payments, exact cents, duplicates, invalid requests, ownership, private allocations, and protected history. Do not commit real account IDs, receipts or financial backups.

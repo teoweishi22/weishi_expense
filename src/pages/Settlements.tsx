@@ -15,11 +15,17 @@ import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { outstanding, netBalance } from '@/lib/balances';
+import RepaymentDialog from '@/components/RepaymentDialog';
 
 export default function Settlements() {
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [repayment, setRepayment] = useState<{person: Person; balance: number; splitId?: string} | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [ownerId, setOwnerId] = useState('');
 
   // Identify "Me" - Replace with your actual logic to find your user record
   const me = people.find(p => p.name.toLowerCase() === 'me');
@@ -30,6 +36,7 @@ export default function Settlements() {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
@@ -39,6 +46,7 @@ export default function Settlements() {
         return;
       }
 
+      setOwnerId(userId);
       const [splitsRes, peopleRes] = await Promise.all([
         supabase
           .from('expense_splits')
@@ -49,6 +57,8 @@ export default function Settlements() {
         supabase.from('people').select('*').order('name'),
       ]);
 
+      if (splitsRes.error) throw splitsRes.error;
+      if (peopleRes.error) throw peopleRes.error;
       if (splitsRes.data) {
         // Map the result back to the expected structure (expense: expenses instead of expenses: expenses)
         const mappedSplits = splitsRes.data.map((split: any) => ({
@@ -59,60 +69,22 @@ export default function Settlements() {
       }
       if (peopleRes.data) setPeople(peopleRes.data);
     } catch (error) {
-      console.error('Error fetching settlements:', error);
+      setLoadError('Could not load balances. Refresh and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const markAsSettled = async (splitId: string) => {
-    try {
-      const split = splits.find(s => s.id === splitId);
-      if (!split) return;
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      const { error } = await supabase
-        .from('expense_splits')
-        .update({ is_settled: true })
-        .eq('id', splitId);
-
-      if (error) throw error;
-
-      // Create a settlement record in the expenses table so it shows up in history
-      if (userId) {
-        const originalPayerIsMe = split.expense?.payer_id === me?.id;
-        let description = '';
-        let payerId = '';
-
-        if (originalPayerIsMe) {
-          description = `[Settlement] ${split.person?.name || 'Someone'} paid back for ${split.expense?.description || 'Expense'}`;
-          payerId = split.person_id;
-        } else {
-          description = `[Settlement] Me paid back to ${split.person?.name || 'Someone'} for ${split.expense?.description || 'Expense'}`;
-          payerId = me?.id || '';
-        }
-
-        await supabase.from('expenses').insert([{
-          description,
-          total_amount: Number(split.amount_owed),
-          expense_date: new Date().toISOString().split('T')[0],
-          category_id: split.expense?.category_id || null,
-          payment_method_id: split.expense?.payment_method_id || null,
-          payer_id: payerId || null,
-          user_id: userId
-        }]);
-      }
-
-      setSplits(splits.filter(s => s.id !== splitId));
-    } catch (error) {
-      console.error('Error marking as settled:', error);
-    }
+  const markAsSettled = (splitId: string) => {
+    const split = splits.find(s => s.id === splitId);
+    if (!split || !me) return;
+    const received = split.expense?.payer_id === me.id;
+    const person = people.find(p => p.id === (received ? split.person_id : split.expense?.payer_id));
+    if (person) setRepayment({ person, balance: outstanding(split) * (received ? 1 : -1), splitId });
   };
 
   const getShareUrl = (token: string) => {
-    return `${window.location.origin}/shared/settlement/${token}`;
+    return `${window.location.origin}/shared/settlement/${token}?owner=${encodeURIComponent(ownerId)}`;
   };
 
   const sendWhatsAppReminder = (person: Person, amount: number) => {
@@ -127,13 +99,13 @@ export default function Settlements() {
     .map(person => {
       // Amount they owe YOU (You were the payer, they were the person in split)
       const theyOweMeSplits = splits.filter(s => s.person_id === person.id && s.expense?.payer_id === me?.id);
-      const theyOweMe = theyOweMeSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+
       
       // Amount YOU owe them (They were the payer, you were the person in split)
       const iOweThemSplits = splits.filter(s => s.person_id === me?.id && s.expense?.payer_id === person.id);
-      const iOweThem = iOweThemSplits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+
       
-      const net = theyOweMe - iOweThem;
+      const net = me ? netBalance(splits, me.id, person.id) : 0;
       
       // Combine splits for display
       const allRelatedSplits = [...theyOweMeSplits, ...iOweThemSplits];
@@ -153,12 +125,15 @@ export default function Settlements() {
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading settlements...</div>;
 
+  if (loadError) return <p role="alert" className="p-8 text-red-600">{loadError}</p>;
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="pb-32"
     >
+      {repayment && <RepaymentDialog {...repayment} onClose={() => { setRepayment(null); fetchData(); }} onSaved={() => { setRepayment(null); fetchData(); }} />}
       {/* Page Title & Massive Header */}
       <div className="mb-12">
         <h1 className="font-headline font-extrabold text-5xl md:text-7xl tracking-tighter mb-8 leading-none">
@@ -236,6 +211,9 @@ export default function Settlements() {
                   </div>
                 </div>
 
+                <button onClick={() => setRepayment({person, balance: totalOwed})}
+                  className="w-full py-3 mb-2 rounded-full bg-black text-white font-bold text-sm">Record Repayment</button>
+                <p className="text-xs text-gray-500 mb-4">{totalOwed > 0 ? 'Still owes you' : 'You still owe'} · after recorded repayments</p>
                 {/* Individual Transactions (Shown on all cards for maximum transparency) */}
                 <div className="space-y-3 mt-4">
                   {personSplits.slice(0, 5).map(split => (
@@ -262,12 +240,12 @@ export default function Settlements() {
                           "font-bold text-xs sm:text-sm",
                           split.expense?.payer_id === me?.id ? "text-green-600" : "text-red-600"
                         )}>
-                          {split.expense?.payer_id === me?.id ? '+' : '-'}RM {Number(split.amount_owed).toFixed(2)}
+                          {split.expense?.payer_id === me?.id ? '+' : '-'}RM {outstanding(split).toFixed(2)}
                         </span>
                         <button 
                           onClick={() => markAsSettled(split.id)}
                           className="p-1.5 bg-white rounded-full text-blue-600 shadow-sm hover:scale-105 active:scale-95 transition-transform"
-                          title="Mark as Settled"
+                          title="Record repayment for this share"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                         </button>
