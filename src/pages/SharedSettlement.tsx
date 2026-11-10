@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { ExpenseSplit, Person } from '@/types';
 import { format } from 'date-fns';
 import { Receipt, CheckCircle2 } from 'lucide-react';
+import { outstanding, netBalance } from '@/lib/balances';
 
 export default function SharedSettlement() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const ownerId = searchParams.get('owner');
+  const [meId, setMeId] = useState('');
   const [person, setPerson] = useState<Person | null>(null);
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,7 +21,7 @@ export default function SharedSettlement() {
     if (token) {
       fetchSharedData(token);
     }
-  }, [token]);
+  }, [token, ownerId]);
 
   const fetchSharedData = async (shareToken: string) => {
     setLoading(true);
@@ -36,17 +40,30 @@ export default function SharedSettlement() {
 
       setPerson(personData);
 
-      // 2. Fetch their pending splits
-      const { data: splitsData, error: splitsError } = await supabase
-        .from('expense_splits')
-        .select('*, expense:expenses(*, category:categories(*))')
-        .eq('person_id', personData.id)
-        .eq('is_settled', false)
-        .order('created_at', { ascending: false });
+      const { data: meRows, error: meError } = await supabase.from('people').select('id').ilike('name', 'me');
+      if (meError || meRows?.length !== 1) throw new Error('Could not identify the account owner.');
+      const me = meRows[0].id;
+      setMeId(me);
+      // Fetch both directions. Links include the ledger owner so different accounts never mix.
+      let theirs = supabase.from('expense_splits')
+        .select('*, expense:expenses!inner(*, category:categories(*))').eq('person_id', personData.id);
+      let ours = supabase.from('expense_splits')
+        .select('*, expense:expenses!inner(*, category:categories(*))').eq('person_id', me).eq('expense.payer_id', personData.id);
+      if (ownerId) {
+        theirs = theirs.eq('expense.user_id', ownerId);
+        ours = ours.eq('expense.user_id', ownerId);
+      }
+      const [theirResult, ourResult] = await Promise.all([theirs, ours]);
+      if (theirResult.error) throw theirResult.error;
+      if (ourResult.error) throw ourResult.error;
+      const related = [...(theirResult.data || []), ...(ourResult.data || [])] as unknown as ExpenseSplit[];
+      const relevant = related.filter(s => (s.expense?.payer_id === me && s.person_id === personData.id)
+        || (s.expense?.payer_id === personData.id && s.person_id === me));
+      const owners = new Set(relevant.map(s => s.expense?.user_id).filter(Boolean));
+      if (!ownerId && owners.size > 1) throw new Error('Ask the sender for an updated settlement link.');
+      setSplits(relevant.filter(s => !s.is_settled && outstanding(s)>0)
+        .sort((a,b) => b.created_at.localeCompare(a.created_at)));
 
-      if (splitsError) throw splitsError;
-
-      setSplits(splitsData || []);
     } catch (err: any) {
       console.error('Error fetching shared data:', err);
       setError(err.message || 'Failed to load data.');
@@ -77,7 +94,7 @@ export default function SharedSettlement() {
     );
   }
 
-  const totalOwed = splits.reduce((sum, split) => sum + Number(split.amount_owed), 0);
+  const totalOwed = netBalance(splits, meId, person.id);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 pb-24">
@@ -88,11 +105,11 @@ export default function SharedSettlement() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border text-center">
-          <p className="text-sm text-gray-500 font-medium uppercase tracking-wider mb-2">Total Outstanding</p>
-          <p className="text-4xl font-bold text-red-600">RM {totalOwed.toFixed(2)}</p>
+          <p className="text-sm text-gray-500 font-medium uppercase tracking-wider mb-2">{totalOwed < 0 ? 'You Are Owed' : 'Total Outstanding'}</p>
+          <p className="text-4xl font-bold text-red-600">RM {Math.abs(totalOwed).toFixed(2)}</p>
         </div>
 
-        {splits.length === 0 ? (
+        {totalOwed === 0 ? (
           <div className="bg-white p-8 rounded-xl shadow-sm border text-center">
             <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
             <p className="text-gray-600 font-medium">You're all caught up!</p>
@@ -123,7 +140,7 @@ export default function SharedSettlement() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500 mb-1">Your Share</p>
-                    <p className="font-bold text-gray-900 text-lg">RM {Number(split.amount_owed).toFixed(2)}</p>
+                    <p className="font-bold text-gray-900 text-lg">{split.expense?.payer_id === meId ? '+' : '−'}RM {outstanding(split).toFixed(2)}</p>
                   </div>
                 </div>
                 

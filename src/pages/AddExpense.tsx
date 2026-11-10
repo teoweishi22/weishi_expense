@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { paymentProtected } from '@/lib/balances';
 import { Category, PaymentMethod, Person } from '@/types';
 import { 
   X, 
@@ -43,6 +44,7 @@ export default function AddExpenseForm() {
   const [people, setPeople] = useState<Person[]>([]);
   const [isSplitting, setIsSplitting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [protectedRecord, setProtectedRecord] = useState(false);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
 
   // AI Receipt Scanning States
@@ -96,6 +98,7 @@ export default function AddExpenseForm() {
           .single();
           
         if (expense) {
+          setProtectedRecord(paymentProtected(expense));
           setExistingPhotoUrl(expense.receipt_photo_url);
           
           const hasSplits = expense.expense_splits && expense.expense_splits.length > 0;
@@ -506,7 +509,8 @@ export default function AddExpenseForm() {
           .select('person_id, is_settled')
           .eq('expense_id', expenseId);
           
-        await supabase.from('expense_splits').delete().eq('expense_id', expenseId);
+        const { error: splitDeleteError } = await supabase.from('expense_splits').delete().eq('expense_id', expenseId);
+        if (splitDeleteError) throw splitDeleteError;
         
         if (isSplitting && data.splits.length > 0) {
           const splitInserts = data.splits.map(split => {
@@ -518,7 +522,8 @@ export default function AddExpenseForm() {
               is_settled: existing ? existing.is_settled : false
             };
           });
-          await supabase.from('expense_splits').insert(splitInserts);
+          const { error: splitSaveError } = await supabase.from('expense_splits').insert(splitInserts);
+          if (splitSaveError) throw splitSaveError;
         }
       } else {
         if (isSplitting && data.splits.length > 0) {
@@ -528,7 +533,8 @@ export default function AddExpenseForm() {
             amount_owed: Number(split.amount_owed),
             is_settled: false
           }));
-          await supabase.from('expense_splits').insert(splitInserts);
+          const { error: splitSaveError } = await supabase.from('expense_splits').insert(splitInserts);
+          if (splitSaveError) throw splitSaveError;
         }
       }
 
@@ -542,6 +548,12 @@ export default function AddExpenseForm() {
       setIsSubmitting(false);
     }
   };
+
+  if (protectedRecord) return <div className="p-8 space-y-4">
+    <h2 className="text-xl font-bold">Repayment history preserved</h2>
+    <p>This record has repayments. Its original details cannot be edited here.</p>
+    <button onClick={() => navigate('/expenses')} className="rounded-full bg-black text-white px-6 py-3">Back to History</button>
+  </div>;
 
   if (entryMode === 'choice' && !isEditing) {
     return (

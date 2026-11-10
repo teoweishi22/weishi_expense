@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { Wallet, Bell, Clock, TrendingUp, Utensils, ShoppingBag, Plane, Tag, X, Download, CheckCircle2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { billTotal, isRepayment, netBalance } from '@/lib/balances';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -86,7 +87,7 @@ export default function Dashboard() {
     }
   };
 
-  const totalExpenses = expenses.filter(exp => !exp.description.startsWith('[Settlement]')).reduce((sum, exp) => sum + Number(exp.total_amount), 0);
+  const totalExpenses = billTotal(expenses);
   
   // 1. Find the "Me" person (assuming your name is "Me" or you have a specific ID)
   const me = people.find(p => p.name.toLowerCase() === "me"); 
@@ -95,17 +96,7 @@ export default function Dashboard() {
   const personBalances = people
     .filter(p => p.id !== me?.id)
     .map(person => {
-      // Amount they owe YOU (You were the payer, they were the person in split)
-      const theyOweMe = splits
-        .filter(s => s.person_id === person.id && s.expense?.payer_id === me?.id)
-        .reduce((sum, s) => sum + Number(s.amount_owed), 0);
-      
-      // Amount YOU owe them (They were the payer, you were the person in split)
-      const iOweThem = splits
-        .filter(s => s.person_id === me?.id && s.expense?.payer_id === person.id)
-        .reduce((sum, s) => sum + Number(s.amount_owed), 0);
-      
-      return { person, net: theyOweMe - iOweThem };
+      return { person, net: me ? netBalance(splits, me.id, person.id) : 0 };
     });
 
   // 2. Calculate "Total I Owe"
@@ -120,7 +111,7 @@ export default function Dashboard() {
     .filter(b => b.net > 0)
     .reduce((sum, b) => sum + b.net, 0);
 
-  const expensesByCategory = expenses.filter(exp => !exp.description.startsWith('[Settlement]')).reduce((acc, exp) => {
+  const expensesByCategory = expenses.filter(exp => !isRepayment(exp)).reduce((acc, exp) => {
     const catName = exp.category?.name || 'Uncategorized';
     const amount = Number(exp.total_amount);
     if (!acc[catName]) {
