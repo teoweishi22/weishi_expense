@@ -28,6 +28,8 @@ export type Expense = {
   payment_method_id: string;
   receipt_photo_url: string | null;
   payer_id: string | null;
+  repayment_person_id?: string | null;
+  user_id?: string;
   created_at: string;
   category?: Category;
   payment_method?: PaymentMethod;
@@ -40,8 +42,10 @@ export type ExpenseSplit = {
   expense_id: string;
   person_id: string;
   amount_owed: number;
+  paid_amount?: number;
   is_settled: boolean;
   created_at: string;
   person?: Person;
   expense?: Expense;
+  expenses?: Expense;
 };
