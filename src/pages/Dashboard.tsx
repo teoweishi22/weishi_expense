@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const handleDownload = async (url: string) => {
@@ -41,13 +42,13 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
 
       if (!userId) {
-        setLoading(false);
-        return;
+        throw new Error('Sign in to load your records.');
       }
 
       const startOfMonth = new Date();
@@ -67,7 +68,7 @@ export default function Dashboard() {
           .order('expense_date', { ascending: false }),
         supabase
           .from('expense_splits')
-          .select('*, person:people(*), expenses!inner(*)')
+          .select('*, person:people(*), expenses!expense_splits_expense_id_fkey!inner(*)')
           .eq('is_settled', false)
           .eq('expenses.user_id', userId),
         supabase.from('people').select('*')
@@ -82,6 +83,7 @@ export default function Dashboard() {
       setPeople(peopleRes.data || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -134,6 +136,13 @@ export default function Dashboard() {
   if (loading) {
     return <div className="flex justify-center items-center h-64">Loading...</div>;
   }
+
+  if (loadError) return (
+    <div role="alert" className="p-8 space-y-4 text-center">
+      <p className="text-red-600">Could not load balances. Please retry; this does not mean your records are empty.</p>
+      <button type="button" onClick={() => fetchDashboardData()} className="rounded-xl bg-black px-5 py-3 text-white">Retry</button>
+    </div>
+  );
 
   // 1. Add this logic above your return statement
   // Use a strict check for the limit

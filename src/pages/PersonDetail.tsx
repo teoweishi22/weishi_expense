@@ -25,6 +25,7 @@ export default function PersonDetail() {
   const [me, setMe] = useState<Person | null>(null);
   const [splits, setSplits] = useState<ExpenseSplit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -53,13 +54,13 @@ export default function PersonDetail() {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
 
       if (!userId) {
-        setLoading(false);
-        return;
+        throw new Error('Sign in to load your records.');
       }
 
       // Fetch the person and "Me"
@@ -68,20 +69,23 @@ export default function PersonDetail() {
         supabase.from('people').select('*').eq('name', 'Me').single()
       ]);
 
+      if (personRes.error) throw personRes.error;
+      if (meRes.error) throw meRes.error;
       if (personRes.data) setPerson(personRes.data);
       const meData = meRes.data;
       if (meData) setMe(meData);
 
       if (meData && personRes.data) {
         // Fetch all unsettled splits involving either person
-        const { data: splitsData } = await supabase
+        const { data: splitsData, error: splitsError } = await supabase
           .from('expense_splits')
-          .select('*, expenses!inner(*, category:categories(*))')
+          .select('*, expenses!expense_splits_expense_id_fkey!inner(*, category:categories(*))')
           .in('person_id', [id, meData.id])
           .eq('is_settled', false)
           .eq('expenses.user_id', userId)
           .order('created_at', { ascending: false });
 
+        if (splitsError) throw splitsError;
         if (splitsData) {
           const mappedSplits = splitsData.map((split: any) => ({
             ...split,
@@ -98,6 +102,7 @@ export default function PersonDetail() {
       }
     } catch (error) {
       console.error('Error fetching person details:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -290,6 +295,13 @@ export default function PersonDetail() {
   if (loading) {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
+
+  if (loadError) return (
+    <div role="alert" className="p-8 space-y-4 text-center">
+      <p className="text-red-600">Could not load balances. Please retry; this does not mean your records are empty.</p>
+      <button type="button" onClick={() => fetchData()} className="rounded-xl bg-black px-5 py-3 text-white">Retry</button>
+    </div>
+  );
 
   if (!person) {
     return <div className="p-6 text-center">Person not found.</div>;

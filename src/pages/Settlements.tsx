@@ -50,7 +50,7 @@ export default function Settlements() {
       const [splitsRes, peopleRes] = await Promise.all([
         supabase
           .from('expense_splits')
-          .select('*, person:people(*), expenses!inner(*)')
+          .select('*, person:people(*), expenses!expense_splits_expense_id_fkey!inner(*)')
           .eq('is_settled', false)
           .eq('expenses.user_id', userId)
           .order('created_at', { ascending: false }),
