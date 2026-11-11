@@ -24,6 +24,7 @@ export default function Expenses() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -42,22 +43,25 @@ export default function Expenses() {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
 
       if (!userId) {
-        setLoading(false);
-        return;
+        throw new Error('Sign in to load your records.');
       }
 
       const [expRes, catRes, peopleRes] = await Promise.all([
-        supabase.from('expenses').select('*, category:categories(*), expense_splits(*), payment_method:payment_methods(*), payer:people!payer_id(*)').eq('user_id', userId).order('expense_date', { ascending: false }),
+        supabase.from('expenses').select('*, category:categories(*), expense_splits!expense_splits_expense_id_fkey(*), payment_method:payment_methods(*), payer:people!payer_id(*)').eq('user_id', userId).order('expense_date', { ascending: false }),
         supabase.from('categories').select('*').order('name'),
         supabase.from('people').select('*')
       ]);
 
-      if (expRes.data) setExpenses(expRes.data);
+      if (expRes.error) throw expRes.error;
+      if (catRes.error) throw catRes.error;
+      if (peopleRes.error) throw peopleRes.error;
+      setExpenses(expRes.data || []);
       if (catRes.data) setCategories(catRes.data);
       if (peopleRes.data) {
         setPeople(peopleRes.data);
@@ -66,6 +70,7 @@ export default function Expenses() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -191,6 +196,13 @@ export default function Expenses() {
   };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading transactions...</div>;
+
+  if (loadError) return (
+    <div role="alert" className="p-8 space-y-4 text-center">
+      <p className="text-red-600">Could not load transactions. Please retry; this does not mean your records are empty.</p>
+      <button type="button" onClick={() => fetchData()} className="rounded-xl bg-black px-5 py-3 text-white">Retry</button>
+    </div>
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-32">

@@ -92,7 +92,7 @@ export default function AddExpenseForm() {
       if (isEditing && userId) {
         const { data: expense, error } = await supabase
           .from('expenses')
-          .select('*, expense_splits(*)')
+          .select('*, expense_splits!expense_splits_expense_id_fkey(*)')
           .eq('id', id)
           .eq('user_id', userId)
           .single();

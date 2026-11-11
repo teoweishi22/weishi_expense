@@ -46,9 +46,9 @@ export default function SharedSettlement() {
       setMeId(me);
       // Fetch both directions. Links include the ledger owner so different accounts never mix.
       let theirs = supabase.from('expense_splits')
-        .select('*, expense:expenses!inner(*, category:categories(*))').eq('person_id', personData.id);
+        .select('*, expense:expenses!expense_splits_expense_id_fkey!inner(*, category:categories(*))').eq('person_id', personData.id);
       let ours = supabase.from('expense_splits')
-        .select('*, expense:expenses!inner(*, category:categories(*))').eq('person_id', me).eq('expense.payer_id', personData.id);
+        .select('*, expense:expenses!expense_splits_expense_id_fkey!inner(*, category:categories(*))').eq('person_id', me).eq('expense.payer_id', personData.id);
       if (ownerId) {
         theirs = theirs.eq('expense.user_id', ownerId);
         ours = ours.eq('expense.user_id', ownerId);
